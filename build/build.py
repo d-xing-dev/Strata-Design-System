@@ -1,0 +1,2622 @@
+#!/usr/bin/env python3
+"""Emit dist/tokens.json, dist/strata.css and dist/index.html from the token source."""
+
+from __future__ import annotations
+import json, os, html, re
+from color import (build_palette, build_hover_spectrum, contrast, GRADES,
+                   PINNED, BRAND_ANCHORS, HUES, ROLES, ACTIVE_BRAND)
+import tokens as T
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+# One output tree per brand. An unbranded `scaffold` build and a branded build are
+# different deliverables for different fidelity levels, not versions of each other.
+DIST = os.path.join(ROOT, "dist", ACTIVE_BRAND)
+os.makedirs(DIST, exist_ok=True)
+
+PALETTE = build_palette()
+HOVER = build_hover_spectrum(PALETTE)
+
+
+# ---------------------------------------------------------------------------
+# reference resolution
+# ---------------------------------------------------------------------------
+
+def resolve(ref: str) -> str:
+    """'blue.60' | 'neutral.50@0.12' | 'white' | 'transparent' -> css colour"""
+    if ref in ("transparent", "currentColor"):
+        return ref
+    alpha = None
+    if "@" in ref:
+        ref, a = ref.split("@")
+        alpha = float(a)
+    if ref == "white":
+        hexv = "#ffffff"
+    elif ref == "black":
+        hexv = "#000000"
+    else:
+        ramp, grade = ref.split(".")
+        hexv = PALETTE[ramp][int(grade)]
+    if alpha is None:
+        return hexv
+    r, g, b = (int(hexv[i:i + 2], 16) for i in (1, 3, 5))
+    return f"rgba({r}, {g}, {b}, {alpha})"
+
+
+def _rgb(hexv: str):
+    return tuple(int(hexv[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def composite(ref: str, backdrop_hex: str) -> str:
+    """
+    Flatten a token reference onto a known backdrop and return an opaque hex.
+
+    Alpha tokens ($text-disabled, $background-hover, $overlay ...) cannot be contrast-
+    checked without knowing what they sit on. The earlier version of this function
+    returned the un-composited base colour, which silently over-reported contrast for
+    every alpha token in the system. This does the real source-over composite.
+    """
+    if ref in ("transparent", "currentColor"):
+        return backdrop_hex
+    if "@" not in ref:
+        return resolve(ref)
+    base, a = ref.split("@")
+    a = float(a)
+    fr, fg_, fb = _rgb(resolve(base))
+    br, bg_, bb = _rgb(backdrop_hex)
+    out = tuple(round(f * a + b * (1 - a)) for f, b in ((fr, br), (fg_, bg_), (fb, bb)))
+    return "#{:02x}{:02x}{:02x}".format(*out)
+
+
+# ---------------------------------------------------------------------------
+# brand anchors
+# ---------------------------------------------------------------------------
+
+_ANCHOR_FAMILY = {
+    "#86BC25": "green", "#43B02A": "green", "#009A44": "green",
+    "#046A38": "green", "#2C5234": "green",
+    "#63666A": "neutral", "#53565A": "neutral",
+    "#0076A8": "blue", "#005587": "blue", "#007680": "teal",
+    "#DA291C": "red", "#ED8B00": "amber",
+}
+
+
+def _rgb_dist(a, b):
+    a, b = a.lstrip("#"), b.lstrip("#")
+    return sum((int(a[i:i + 2], 16) - int(b[i:i + 2], 16)) ** 2 for i in (0, 2, 4)) ** 0.5
+
+
+def brand_anchor(hexv):
+    """Where does an official brand value land on the luminance ladder, and how close?
+
+    This is the honest way to document a brand adaptation of a computed palette:
+    state the mapping and the error rather than claiming an exact match. Anything
+    over about delta-RGB 25 is a different colour, not a rounding difference.
+    """
+    fam = _ANCHOR_FAMILY[hexv]
+    best = min(GRADES, key=lambda g: _rgb_dist(PALETTE[fam][g], hexv))
+    return {
+        "token": f"{fam}.{best}",
+        "hex": PALETTE[fam][best],
+        "deltaRGB": round(_rgb_dist(PALETTE[fam][best], hexv), 1),
+        "contrastVsWhite": contrast(hexv, "#ffffff"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# tokens.json
+# ---------------------------------------------------------------------------
+
+def build_tokens_json():
+    doc = {
+        "$schema": "https://design-tokens.github.io/community-group/format/",
+        "name": "Strata",
+        "version": "0.1.0",
+        "brandName": ACTIVE_BRAND,
+        "description": (
+            "A design system derived from IBM's Carbon Design System (Apache-2.0). "
+            "Every token records the Carbon value it came from and the reason for any "
+            "divergence. Not affiliated with or endorsed by IBM. "
+            + ("Unbranded scaffold build: the moderate-fidelity render target. Real "
+               "spacing, type, states and hierarchy with no brand commitment."
+               if ACTIVE_BRAND == "scaffold" else
+               f"Branded build ({ACTIVE_BRAND}): the high-fidelity target, valid only "
+               "once design-system binding has been confirmed.")
+        ),
+        "primitive": {
+            "color": {
+                ramp: {str(g): {"$type": "color", "$value": v} for g, v in grades.items()}
+                for ramp, grades in PALETTE.items()
+            },
+            "colorHover": {
+                ramp: {str(g): {"$type": "color", "$value": v} for g, v in grades.items()}
+                for ramp, grades in HOVER.items()
+            },
+            "spacing": {k: {"$type": "dimension", "$value": f"{v}px"} for k, v in T.SPACING.items()},
+            "size": {k: {"$type": "dimension", "$value": f"{v}px"} for k, v in T.SIZES.items()},
+            "radius": {k: {"$type": "dimension", "$value": f"{v}px"} for k, v in T.RADIUS.items()},
+            "pinned": {k: {"$type": "color", "$value": v} for k, v in PINNED.items()},
+            "typeScale": [f"{v}px" for v in T.TYPE_SCALE],
+            "breakpoint": {k: {"$type": "dimension", "$value": f"{v}px"} for k, v in T.BREAKPOINTS.items()},
+        },
+        "semantic": {
+            "color": {
+                name: {
+                    "$type": "color",
+                    "$value": {"light": resolve(lt), "dark": resolve(dk)},
+                    "$description": role,
+                    "$extensions": {"org.strata.carbon": prov},
+                }
+                for name, (lt, dk, role, prov) in T.SEMANTIC.items()
+            },
+            "typography": {
+                name: {
+                    "$type": "typography",
+                    "$value": {
+                        "fontSize": f"{s['size']}px",
+                        "lineHeight": f"{s['lh']}px",
+                        "fontWeight": s["weight"],
+                        "letterSpacing": s["ls"],
+                    },
+                    "$extensions": {"org.strata.carbon": s["carbon"]},
+                }
+                for name, s in T.TYPE_STYLES.items()
+            },
+            "elevation": {k: {"$type": "shadow", "$value": v} for k, v in T.ELEVATION.items()},
+            "motion": {k: {"$value": v["value"], "$extensions": {"org.strata.carbon": v["carbon"]}}
+                       for k, v in T.MOTION.items()},
+        },
+        "provenance": {
+            "spacing": T.SPACING_CARBON,
+            "size": T.SIZES_CARBON,
+            "radius": T.RADIUS_CARBON,
+            "elevation": T.ELEVATION_CARBON,
+            "breakpoint": T.BREAKPOINTS_CARBON,
+            "typeface": {k: v["carbon"] for k, v in T.TYPEFACE.items()},
+        },
+        "components": T.COMPONENTS,
+        "brand": {
+            "name": ACTIVE_BRAND,
+            "roles": ROLES,
+            "hues": {k: {"oklchHue": v[0], "chromaMultiplier": v[1]} for k, v in HUES.items()},
+            "anchors": [
+                {"name": n, "hex": h, "pantone": p_, "role": r, "resolvesTo": brand_anchor(h)}
+                for n, h, p_, r in BRAND_ANCHORS
+            ],
+        },
+    }
+    with open(os.path.join(DIST, "tokens.json"), "w") as f:
+        json.dump(doc, f, indent=2)
+    return doc
+
+
+# ---------------------------------------------------------------------------
+# CSS
+# ---------------------------------------------------------------------------
+
+def build_css():
+    L = []
+    add = L.append
+    add("/* Strata — generated by build/build.py. Do not edit by hand. */")
+    add(f"/* Brand: {ACTIVE_BRAND} */")
+    add("/* Derived from IBM Carbon (Apache-2.0). Not affiliated with or endorsed by IBM. */\n")
+
+    add(":root {")
+    add("  /* ---- primitive: colour ---- */")
+    for ramp, grades in PALETTE.items():
+        if ramp in ("white", "black"):
+            add(f"  --st-{ramp}: {grades[0]};")
+            continue
+        for g in GRADES:
+            add(f"  --st-{ramp}-{g}: {grades[g]};")
+    add("")
+    add("  /* ---- pinned brand values: NOT part of any ramp, NOT for text or UI state ---- */")
+    for k, v in PINNED.items():
+        add(f"  --st-{k}: {v};")
+    add("")
+    add("  /* ---- primitive: spacing (Carbon scale, multiples of 2/4/8, unchanged) ---- */")
+    for k, v in T.SPACING.items():
+        add(f"  --st-space-{k}: {v/16:g}rem; /* {v}px */")
+    add("")
+    add("  /* ---- primitive: control size ---- */")
+    for k, v in T.SIZES.items():
+        add(f"  --st-size-{k}: {v/16:g}rem; /* {v}px */")
+    add("")
+    add("  /* ---- primitive: radius (added; Carbon publishes no scale) ---- */")
+    for k, v in T.RADIUS.items():
+        add(f"  --st-radius-{k}: {v}px;")
+    add("")
+    add("  /* ---- typography ---- */")
+    add(f"  --st-font-sans: {T.TYPEFACE['sans']['value']};")
+    add(f"  --st-font-mono: {T.TYPEFACE['mono']['value']};")
+    for name, s in T.TYPE_STYLES.items():
+        add(f"  --st-type-{name}-size: {s['size']/16:g}rem;")
+        add(f"  --st-type-{name}-lh: {s['lh']/16:g}rem;")
+        add(f"  --st-type-{name}-weight: {s['weight']};")
+        add(f"  --st-type-{name}-ls: {s['ls']};")
+    add("")
+    add("  /* ---- primitive: layout (added; Carbon's 2x Grid values, own implementation) ---- */")
+    for k, v in T.BREAKPOINTS.items():
+        add(f"  --st-bp-{k}: {v}px;")
+    add(f"  --st-grid-columns: {T.GRID['columns']};")
+    add(f"  --st-grid-gutter: {T.GRID['gutter']}px;")
+    add(f"  --st-grid-gutter-narrow: {T.GRID['gutter-narrow']}px;")
+    add(f"  --st-grid-gutter-condensed: {T.GRID['gutter-condensed']}px;")
+    add(f"  --st-container-max: {T.GRID['container-max']}px;")
+    add(f"  --st-container-margin: {T.GRID['margin']}px;")
+    for k, v in T.SHELL.items():
+        add(f"  --st-shell-{k}: {v/16:g}rem; /* {v}px */")
+    add("")
+    add("  /* ---- density: declared on the shell, inherited by components ---- */")
+    d = T.DENSITY["comfortable"]
+    add(f"  --st-density-control: var(--st-size-{d['control']});")
+    add(f"  --st-density-row: {d['row']/16:g}rem;")
+    add(f"  --st-density-pad: var(--st-space-{d['pad']});")
+    add("")
+    add("  /* ---- elevation ---- */")
+    for k, v in T.ELEVATION.items():
+        add(f"  --st-elevation-{k}: {v};")
+    add("")
+    add("  /* ---- motion (Carbon productive curves and durations, unchanged) ---- */")
+    for k, v in T.MOTION.items():
+        add(f"  --st-{k}: {v['value']};")
+    add("}\n")
+
+    dc = T.DENSITY["compact"]
+    add('[data-density="compact"] {')
+    add(f"  --st-density-control: var(--st-size-{dc['control']});")
+    add(f"  --st-density-row: {dc['row']/16:g}rem;")
+    add(f"  --st-density-pad: var(--st-space-{dc['pad']});")
+    add("}\n")
+
+    # themes
+    for theme, idx in (("light", 0), ("dark", 1)):
+        sel = ':root, [data-theme="light"]' if theme == "light" else '[data-theme="dark"]'
+        add(f"{sel} {{")
+        add(f"  color-scheme: {theme};")
+        for name, spec in T.SEMANTIC.items():
+            ref = spec[idx]
+            add(f"  --st-{name}: {resolve(ref)};")
+        add("}\n")
+
+    add(COMPONENT_CSS)
+    css = "\n".join(L)
+    with open(os.path.join(DIST, "strata.css"), "w") as f:
+        f.write(css)
+    return css
+
+
+COMPONENT_CSS = r"""
+/* ==========================================================================
+   Reset + base
+   ========================================================================== */
+*, *::before, *::after { box-sizing: border-box; }
+/* [encode 2026-08-20, P-4] The hidden attribute must always win. A component
+   display rule silently defeated it once and an invisible modal scrim blocked
+   every click on the page — found by a looking-gate click timeout, not by eye. */
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  font-family: var(--st-font-sans);
+  font-size: var(--st-type-body-md-size);
+  line-height: var(--st-type-body-md-lh);
+  letter-spacing: var(--st-type-body-md-ls);
+  color: var(--st-text-primary);
+  background: var(--st-background);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Focus. Carbon's geometry exactly: 2px ring, outline-offset -2px so the ring is
+   drawn INSIDE the box and cannot collide with an adjacent control. Note Carbon's
+   focus-outline mixin DEFAULTS to $type: 'border' (1px, no offset); the 2px/-2px
+   values are its 'outline' variant, which is what components actually call.
+   Source: @carbon/styles/scss/utilities/_focus-outline.scss                    */
+.st-focusable:focus-visible,
+.st-btn:focus-visible, .st-field:focus-visible, .st-tab:focus-visible,
+.st-tag--interactive:focus-visible, .st-tile--clickable:focus-visible,
+.st-check:focus-visible + .st-check__box, .st-radio:focus-visible + .st-radio__dot,
+.st-toggle:focus-visible + .st-toggle__track, .st-day:focus-visible {
+  outline: 2px solid var(--st-focus);
+  outline-offset: -2px;
+}
+/* prefers-contrast -> dotted, also lifted from Carbon's mixin */
+@media screen and (prefers-contrast: more) {
+  .st-btn:focus-visible, .st-field:focus-visible { outline-style: dotted; }
+}
+/* Reduced motion, systematised. Carbon does give advisory prose ("Consider
+   simplified or reduced motion designs") and 12 of its component SCSS files
+   implement prefers-reduced-motion individually -- but there is no motion opt-out
+   token and no normative requirement, so coverage is per-component and partial.
+   One global rule makes it total and removes the per-component decision. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ==========================================================================
+   Type utilities
+
+   One class per type token, no exceptions. EIGHT tokens, EIGHT classes.
+   [encode 2026-08-20, ledger E-02] The T1 ramp replaced the twelve-token scale;
+   the invariant holds with a smaller N. The retired classes (.st-label-sm,
+   .st-label-md, .st-body-compact, .st-heading-compact, .st-heading-xs,
+   .st-heading-lg) are GONE, not aliased — an alias is a second name for the same
+   decision, and second names are how ten font sizes happen. Artefacts re-render
+   by rebuild; the production check flags the retired names as non-system.
+
+   This used to be five classes against twelve tokens, and the gap was not
+   neutral: a measured engagement wrote 109 hardcoded pixel values against 77
+   token references, because the moment a needed style had no class the cheapest
+   path was a literal, and the first literal legitimises the rest. Partial
+   coverage is worse than either extreme.
+
+   Each class sets size, line-height, weight and letter-spacing together, because
+   those four are one decision and splitting them is how line-height gets dropped.
+
+   NEVER set font-size directly. If no class fits, that is a finding for the
+   system, not a local override. If something needs emphasis, change its weight
+   or colour, never its size — that rule is what makes this ramp hold.
+   ========================================================================== */
+.st-label { font: var(--st-type-label-weight) var(--st-type-label-size)/var(--st-type-label-lh) var(--st-font-sans); letter-spacing: var(--st-type-label-ls); text-transform: uppercase; }
+.st-helper { font: var(--st-type-helper-weight) var(--st-type-helper-size)/var(--st-type-helper-lh) var(--st-font-sans); letter-spacing: var(--st-type-helper-ls); }
+.st-body-sm { font: var(--st-type-body-sm-weight) var(--st-type-body-sm-size)/var(--st-type-body-sm-lh) var(--st-font-sans); letter-spacing: var(--st-type-body-sm-ls); }
+.st-body-md { font: var(--st-type-body-md-weight) var(--st-type-body-md-size)/var(--st-type-body-md-lh) var(--st-font-sans); letter-spacing: var(--st-type-body-md-ls); }
+.st-heading-sm { font: var(--st-type-heading-sm-weight) var(--st-type-heading-sm-size)/var(--st-type-heading-sm-lh) var(--st-font-sans); letter-spacing: var(--st-type-heading-sm-ls); }
+.st-heading-md { font: var(--st-type-heading-md-weight) var(--st-type-heading-md-size)/var(--st-type-heading-md-lh) var(--st-font-sans); letter-spacing: var(--st-type-heading-md-ls); }
+.st-display { font: var(--st-type-display-weight) var(--st-type-display-size)/var(--st-type-display-lh) var(--st-font-sans); letter-spacing: var(--st-type-display-ls); }
+.st-code { font: var(--st-type-code-weight) var(--st-type-code-size)/var(--st-type-code-lh) var(--st-font-mono); letter-spacing: var(--st-type-code-ls); }
+/* [6 Sep 2026] The eight classes above set font and NOTHING else, so on a <p>, an <h1>
+   or a <dd> they inherited the user agent's block margins -- and vertical rhythm then
+   depended on which ELEMENT an author reached for rather than on which class. Measured
+   on an engagement: 44px under a table where unrelated blocks sat at 32, the gap
+   hierarchy inverted by a browser default that nobody wrote and nobody could see.
+   Spacing is owned by the composition layer -- `--gap` on a stack, or a component's own
+   padding -- and never by a type class, so zero is the only value that keeps that rule
+   true. A type class that also sets space is two decisions wearing one name. */
+.st-label, .st-helper, .st-body-sm, .st-body-md,
+.st-heading-sm, .st-heading-md, .st-display, .st-code { margin-block: 0; }
+
+/* ==========================================================================
+   Button
+   ========================================================================== */
+/* [encode 2026-08-20, ledger E-07] The B button: Strata blue, radius 8, centred
+   label at weight 500, height from density (40 default). The centred-symmetric
+   divergence from Carbon's 16/64 asymmetry HOLDS — the locked language chose it
+   again with fresh eyes, so the original divergence gains a second why. */
+.st-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--st-space-03);
+  height: var(--st-density-control);
+  padding-inline: var(--st-space-05);
+  border: 1px solid transparent;
+  border-radius: var(--st-radius-lg);
+  font: var(--st-type-body-md-weight) var(--st-type-body-md-size)/1 var(--st-font-sans);
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color var(--st-duration-fast) var(--st-ease-standard),
+              border-color var(--st-duration-fast) var(--st-ease-standard),
+              color var(--st-duration-fast) var(--st-ease-standard);
+}
+.st-btn--sm { height: var(--st-size-sm); padding-inline: var(--st-space-04); font-size: var(--st-type-body-sm-size); }
+.st-btn--md { height: var(--st-size-md); }
+.st-btn svg { width: 16px; height: 16px; flex: none; }
+
+.st-btn--primary { background: var(--st-button-primary); color: var(--st-text-on-color); }
+.st-btn--primary:hover { background: var(--st-button-primary-hover); }
+.st-btn--primary:active { background: var(--st-button-primary-active); }
+/* the two-tone ring: $focus outside, $focus-inset inside, so the ring survives
+   on a fill that is itself close to $focus. Carbon's mechanism, adopted whole. */
+.st-btn--primary:focus-visible, .st-btn--danger:focus-visible, .st-btn--secondary:focus-visible {
+  box-shadow: inset 0 0 0 3px var(--st-focus-inset);
+}
+
+.st-btn--secondary { background: var(--st-button-secondary); color: var(--st-text-on-color); }
+.st-btn--secondary:hover { background: var(--st-button-secondary-hover); }
+
+/* Tertiary fills with the PRIMARY BUTTON token on hover, not with link-primary.
+   link-primary is grade 40 in the dark theme -- a light green -- so filling with it
+   and keeping a white label gives 2.1:1. button-primary re-resolves per theme
+   (green.70 light / green.60 dark) and holds >=5:1 in both. Carbon never hits this
+   because its primary is a blue that stays dark in both themes; a brand whose
+   accent inverts across themes does. */
+/* [encode E-07] Tertiary re-cut to the hairline school: white surface, subtle
+   interactive border, wash hover. The fill-on-hover contrast trap this rule used
+   to defend against disappears with the fill itself. */
+.st-btn--tertiary { background: var(--st-layer-02); color: var(--st-link-primary); border-color: var(--st-border-interactive-subtle); }
+.st-btn--tertiary:hover { background: var(--st-background-hover); }
+
+.st-btn--ghost { background: transparent; color: var(--st-link-primary); }
+.st-btn--ghost:hover { background: var(--st-background-hover); }
+
+.st-btn--danger { background: var(--st-button-danger); color: var(--st-text-on-color); }
+.st-btn--danger:hover { background: var(--st-button-danger-hover); }
+
+.st-btn:disabled, .st-btn[aria-disabled="true"] {
+  background: var(--st-button-disabled); color: var(--st-text-disabled);
+  border-color: transparent; cursor: not-allowed; box-shadow: none;
+}
+.st-btn-group { display: flex; gap: var(--st-space-03); flex-wrap: wrap; align-items: center; }
+
+/* ==========================================================================
+   Field  (input, textarea, select, date input all share this chrome)
+   ========================================================================== */
+.st-formitem { display: flex; flex-direction: column; gap: var(--st-space-03); margin-bottom: var(--st-space-06); max-width: 24rem; }
+.st-formitem > .st-lbl { color: var(--st-text-secondary); font: var(--st-type-label-weight) var(--st-type-label-size)/var(--st-type-label-lh) var(--st-font-sans); letter-spacing: var(--st-type-label-ls); }
+.st-formitem > .st-help { color: var(--st-text-helper); font: var(--st-type-helper-weight) var(--st-type-helper-size)/var(--st-type-helper-lh) var(--st-font-sans); letter-spacing: var(--st-type-helper-ls); margin-top: calc(var(--st-space-02) - var(--st-space-03)); }
+.st-formitem > .st-msg { display: flex; gap: var(--st-space-02); align-items: flex-start; font: var(--st-type-helper-weight) var(--st-type-helper-size)/var(--st-type-helper-lh) var(--st-font-sans); margin-top: calc(var(--st-space-02) - var(--st-space-03)); }
+.st-msg--error { color: var(--st-text-error); }
+.st-msg--warning { color: var(--st-text-primary); }
+.st-msg svg { width: 16px; height: 16px; flex: none; }
+/* [6 Sep 2026] The 24rem cap is right for a form -- past it a control and its label stop
+   reading as one object. It is wrong wherever the control IS the content: a resolution
+   box judged against two full-width versions above it, a description field in a panel.
+   Measured as an inline `max-width: none` in six places on one engagement, which is the
+   signal that the modifier was missing rather than that the cap was wrong. */
+.st-formitem--full { max-width: none; }
+
+/* [encode 2026-08-20, ledger E-08] The hairline field: white surface, subtle
+   border, whisper shadow, radius 8. This knowingly re-trades the strong-border
+   container argument for the locked language's calm; the trade is recorded, the
+   boundary remains full (Carbon's underline-only was NOT adopted), and the
+   accessible fallback is one class away, not a redesign: .st-field--strong.
+   Focus restores a strong boundary, so the boundary is weakest only at rest. */
+.st-field {
+  width: 100%; height: var(--st-density-control);
+  padding-inline: var(--st-space-04);
+  background: var(--st-layer-02);
+  color: var(--st-text-primary);
+  border: 1px solid var(--st-border-subtle-01);
+  border-radius: var(--st-radius-lg);
+  box-shadow: var(--st-elevation-01);
+  font: var(--st-type-body-md-weight) var(--st-type-body-md-size)/1 var(--st-font-sans);
+  transition: background-color var(--st-duration-fast) var(--st-ease-standard),
+              border-color var(--st-duration-fast) var(--st-ease-standard);
+}
+.st-field--strong { border-color: var(--st-border-strong-01); }
+.st-field::placeholder { color: var(--st-text-placeholder); }
+.st-field:hover:not(:disabled):not([readonly]) { border-color: var(--st-border-strong-01); }
+.st-field:focus-visible { border-color: var(--st-focus); }
+.st-field[aria-invalid="true"] { border-color: var(--st-support-error); border-width: 2px; }
+.st-field:disabled { color: var(--st-text-disabled); border-color: var(--st-border-disabled); background: var(--st-field-01); cursor: not-allowed; }
+.st-field[readonly] { background: transparent; border-color: var(--st-border-subtle-01); }
+textarea.st-field { height: auto; min-height: 6rem; padding-block: var(--st-space-04); line-height: var(--st-type-body-md-lh); resize: vertical; }
+
+.st-field-wrap { position: relative; display: flex; align-items: center; }
+.st-field-wrap > svg { position: absolute; right: var(--st-space-05); width: 16px; height: 16px; pointer-events: none; color: var(--st-icon-primary); }
+select.st-field { -webkit-appearance: none; appearance: none; padding-right: 40px; cursor: pointer; }
+.st-field--date { padding-right: 40px; font-variant-numeric: tabular-nums; }
+
+/* ==========================================================================
+   Checkbox / radio
+   ========================================================================== */
+.st-choice { display: flex; align-items: flex-start; gap: var(--st-space-03); margin-bottom: var(--st-space-03); cursor: pointer; }
+.st-check, .st-radio { position: absolute; opacity: 0; width: 18px; height: 18px; margin: 0; }
+.st-check__box, .st-radio__dot {
+  flex: none; width: 18px; height: 18px; margin-top: 3px;
+  border: 1px solid var(--st-icon-primary);
+  background: transparent;
+  display: grid; place-items: center;
+  transition: background-color var(--st-duration-fast) var(--st-ease-standard);
+}
+.st-check__box { border-radius: var(--st-radius-xs); }
+.st-radio__dot { border-radius: var(--st-radius-full); }
+/* text-inverse, not text-on-color: the box is filled with icon-primary, which is dark
+   in light themes and LIGHT in dark themes. text-on-color is always white, so the
+   checkmark would vanish in dark mode. text-inverse tracks the fill. */
+.st-check__box svg { width: 14px; height: 14px; color: var(--st-text-inverse); opacity: 0; }
+.st-check:checked + .st-check__box { background: var(--st-icon-primary); border-color: var(--st-icon-primary); }
+.st-check:checked + .st-check__box svg { opacity: 1; }
+.st-check:indeterminate + .st-check__box { background: var(--st-icon-primary); border-color: var(--st-icon-primary); }
+.st-check:indeterminate + .st-check__box::after { content: ""; width: 9px; height: 2px; background: var(--st-text-inverse); position: absolute; }
+.st-radio:checked + .st-radio__dot::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--st-icon-primary); }
+.st-check:disabled + .st-check__box, .st-radio:disabled + .st-radio__dot { border-color: var(--st-icon-disabled); background: transparent; }
+.st-choice__label { color: var(--st-text-primary); }
+.st-check:disabled ~ .st-choice__label, .st-radio:disabled ~ .st-choice__label { color: var(--st-text-disabled); }
+
+/* ==========================================================================
+   Toggle
+   ========================================================================== */
+.st-toggle-wrap { display: inline-flex; align-items: center; gap: var(--st-space-03); cursor: pointer; }
+.st-toggle { position: absolute; opacity: 0; width: 48px; height: 24px; margin: 0; }
+.st-toggle__track {
+  width: 48px; height: 24px; flex: none; border-radius: var(--st-radius-full);
+  background: var(--st-toggle-off); position: relative;
+  transition: background-color var(--st-duration-fast) var(--st-ease-standard);
+}
+.st-toggle__track::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+  border-radius: 50%; background: var(--st-toggle-handle);
+  transition: transform var(--st-duration-fast) var(--st-ease-standard);
+}
+.st-toggle:checked + .st-toggle__track { background: var(--st-support-success); }
+.st-toggle:checked + .st-toggle__track::after { transform: translateX(24px); }
+.st-toggle:disabled + .st-toggle__track { background: var(--st-button-disabled); }
+.st-toggle__state { color: var(--st-text-primary); }
+
+/* ==========================================================================
+   Tag
+   ========================================================================== */
+/* [encode 2026-08-20, ledger E-09] The dot-chip is THE tag, system-wide, and it
+   is the one element the appearance axes never vary. Tinted pills retire. The
+   chip is a neutral bordered surface; the hue lives in a 7px dot; the WORD
+   carries the meaning (never-colour-alone holds because the dot is an affordance,
+   not the message). Hue modifier class names are unchanged — markup that said
+   .st-tag--amber says it still; only the expression moved. An icon may take the
+   dot's place: add .st-tag--icon and put a sized svg first in the chip. */
+.st-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 24px; padding-inline: var(--st-space-03);
+  border-radius: var(--st-radius-md);
+  font: var(--st-type-label-weight) var(--st-type-label-size)/1 var(--st-font-sans);
+  letter-spacing: 0.2px;
+  background: var(--st-layer-01); color: var(--st-text-primary);
+  border: 1px solid var(--st-border-subtle-01);
+  white-space: nowrap; /* P-2: a status must never wrap mid-chip */
+}
+.st-tag::before { content: ""; width: 7px; height: 7px; border-radius: var(--st-radius-full);
+                  background: var(--st-icon-secondary); flex: none; }
+.st-tag--sm { height: 20px; }
+.st-tag--lg { height: 32px; padding-inline: var(--st-space-04); }
+/* Dot hues: grade 60 in light (dark enough to register on the pale chip),
+   grade 40 in dark. Decorative affordance — exempt from text contrast, audited
+   as a 3:1 non-text pair against the chip surface where achievable, advisory
+   where not, because the word next to it is the guaranteed channel. */
+.st-tag--blue::before    { background: var(--st-blue-60); }
+.st-tag--teal::before    { background: var(--st-teal-60); }
+.st-tag--green::before   { background: var(--st-green-60); }
+.st-tag--amber::before   { background: var(--st-amber-60); }
+.st-tag--red::before     { background: var(--st-red-60); }
+.st-tag--magenta::before { background: var(--st-magenta-60); }
+[data-theme="dark"] .st-tag--blue::before    { background: var(--st-blue-40); }
+[data-theme="dark"] .st-tag--teal::before    { background: var(--st-teal-40); }
+[data-theme="dark"] .st-tag--green::before   { background: var(--st-green-40); }
+[data-theme="dark"] .st-tag--amber::before   { background: var(--st-amber-40); }
+[data-theme="dark"] .st-tag--red::before     { background: var(--st-red-40); }
+[data-theme="dark"] .st-tag--magenta::before { background: var(--st-magenta-40); }
+.st-tag--icon::before { content: none; }
+.st-tag--icon > svg { width: 12px; height: 12px; flex: none; color: var(--st-icon-secondary); }
+.st-tag--outline { background: transparent; }
+.st-tag--interactive { cursor: pointer; }
+.st-tag--interactive:hover { background: var(--st-layer-hover-01); }
+.st-tag__x { display: grid; place-items: center; width: 16px; height: 16px; border: 0; background: none; padding: 0; cursor: pointer; color: inherit; border-radius: var(--st-radius-full); }
+.st-tag__x:hover { background: var(--st-background-hover); }
+
+/* ==========================================================================
+   Tile
+   ========================================================================== */
+/* [encode 2026-08-20, ledger E-10] The hairline card: white surface, whisper
+   border, radius 10, resting whisper shadow. Separation is the hairline, not
+   tone — the canvas stays white. */
+.st-tile {
+  display: block; min-height: 64px; min-width: 128px; padding: var(--st-space-05);
+  background: var(--st-layer-02); color: var(--st-text-primary);
+  border: 1px solid var(--st-border-subtle-00);
+  border-radius: var(--st-radius-xl);
+  box-shadow: var(--st-elevation-01);
+}
+.st-tile--clickable { cursor: pointer; text-decoration: none; transition: box-shadow var(--st-duration-fast) var(--st-ease-standard), border-color var(--st-duration-fast) var(--st-ease-standard); }
+.st-tile--clickable:hover { border-color: var(--st-border-subtle-01); box-shadow: var(--st-elevation-02); }
+.st-tile--selected { border-color: var(--st-border-interactive); border-width: 2px; padding: calc(var(--st-space-05) - 1px); }
+.st-tile__title { font-weight: 600; margin: 0 0 var(--st-space-02); }
+.st-tile__body { margin: 0; color: var(--st-text-secondary); font-size: var(--st-type-body-sm-size); line-height: var(--st-type-body-sm-lh); }
+/* [6 Sep 2026] A clickable tile that does NOT navigate must be a real <button>, or it is
+   unreachable by keyboard and invisible to a screen reader. The modifier was written for
+   an <a>, so a button wearing it kept the UA's own font, centred text and shrink-to-fit
+   width, and every use carried three inline styles undoing them. Measured: eleven. */
+button.st-tile { width: 100%; text-align: start; font: inherit; color: inherit;
+                 -webkit-appearance: none; appearance: none; }
+
+/* ==========================================================================
+   Notification
+   ========================================================================== */
+/* [encode 2026-08-20, ledger E-11] Notification surfaces go quiet: white card,
+   hairline border, semantic 3px left rule + coloured icon. The full-bleed tinted
+   surface retires from the inline note (it shouted on every screen it sat on);
+   the tint tokens remain for toasts' subtle states and future use. */
+.st-note {
+  display: flex; gap: var(--st-space-05); align-items: flex-start;
+  min-height: 48px; padding: var(--st-space-04) var(--st-space-05);
+  border: 1px solid var(--st-border-subtle-01);
+  border-left: 3px solid var(--st-support-info);
+  background: var(--st-layer-02);
+  border-radius: 0 var(--st-radius-xl) var(--st-radius-xl) 0;
+  color: var(--st-text-primary);
+}
+.st-note svg { width: 20px; height: 20px; flex: none; margin-top: 2px; color: var(--st-support-info); }
+.st-note__title { font: var(--st-type-heading-sm-weight) var(--st-type-heading-sm-size)/var(--st-type-heading-sm-lh) var(--st-font-sans); margin: 0 0 var(--st-space-01); }
+.st-note__body { margin: 0; font-size: var(--st-type-body-sm-size); line-height: var(--st-type-body-sm-lh); color: var(--st-text-secondary); }
+.st-note--error   { border-left-color: var(--st-support-error); }
+.st-note--error svg { color: var(--st-support-error); }
+.st-note--success { border-left-color: var(--st-support-success); }
+.st-note--success svg { color: var(--st-support-success); }
+.st-note--warning { border-left-color: var(--st-support-warning); }
+.st-note--warning svg { color: var(--st-support-warning); }
+
+/* ==========================================================================
+   Tabs
+   ========================================================================== */
+/* [6 Sep 2026] A tab list with more tabs than fit used to push the PAGE wider rather
+   than scrolling itself -- seven content kinds at 1024 overflowed by 73px. Same family
+   as the table wrap below: a container that cannot hold its content must say so, not
+   break the page around it.
+   `flex: none` on the tab is load-bearing, not tidiness. Flex children shrink by
+   default, so with the scroll rule alone the tabs would compress and their labels wrap,
+   the row would always "fit", and `overflow-x` would never engage once -- the same
+   inert-overflow defect the rail shipped with for three weeks. */
+.st-tablist { display: flex; border-bottom: 1px solid var(--st-border-subtle-01);
+              overflow-x: auto; scrollbar-width: thin; }
+.st-tab {
+  flex: none; white-space: nowrap;
+  height: 40px; padding-inline: var(--st-space-05);
+  background: none; border: 0; border-bottom: 2px solid transparent;
+  color: var(--st-text-secondary); cursor: pointer;
+  font: 400 var(--st-type-body-sm-size)/1 var(--st-font-sans);
+  margin-bottom: -1px;
+  transition: color var(--st-duration-fast) var(--st-ease-standard), border-color var(--st-duration-fast) var(--st-ease-standard);
+}
+.st-tab:hover { color: var(--st-text-primary); border-bottom-color: var(--st-border-strong-01); }
+.st-tab[aria-selected="true"] { color: var(--st-text-primary); font-weight: 600; border-bottom-color: var(--st-border-interactive); }
+.st-tab:disabled { color: var(--st-text-disabled); cursor: not-allowed; border-bottom-color: transparent; }
+
+/* ==========================================================================
+   Data table
+   ========================================================================== */
+/* [encode 2026-08-20, ledger E-12] The frameless table: white surface in a
+   whisper-hairline wrap (radius 10), hairline rows, no zebra default, body at
+   body-md with 12px/600 headers. The header is an appearance AXIS — the one
+   place a product may choose colour — set once per product via data-appearance
+   (see the APPEARANCE section): default grey / tint (blue-20) / strong (blue-80).
+   Numeric cells: add .st-num to th AND td — it right-aligns and sets tabular
+   figures (P-1). */
+/* [6 Sep 2026] `overflow: hidden` bought the radius and silently CUT every table wider
+   than its wrap -- no scrollbar, no signal, columns simply gone. Found by a looking
+   gate, not by eye, because a clipped table looks like a table.
+   `auto` keeps the radius: any non-visible overflow still establishes the clipping box,
+   so nothing is given up. Setting one axis to `auto` computes the other from `visible`
+   to `auto` as well, which is why this is one declaration rather than two. */
+.st-table-wrap { border: 1px solid var(--st-border-subtle-00); border-radius: var(--st-radius-xl); overflow: auto; background: var(--st-layer-02); }
+.st-table { width: 100%; border-collapse: collapse; font-size: var(--st-type-body-md-size); }
+.st-table th, .st-table td { text-align: left; padding-inline: var(--st-density-pad); height: var(--st-density-row); }
+.st-table th.st-num, .st-table td.st-num { text-align: end; }
+.st-table thead th {
+  background: var(--st-layer-accent-01); color: var(--st-text-primary);
+  font: 600 var(--st-type-body-sm-size)/1 var(--st-font-sans);
+  letter-spacing: var(--st-type-body-sm-ls);
+  border-bottom: 1px solid var(--st-border-subtle-01);
+  position: sticky; top: 0; z-index: 1;
+}
+.st-table thead th[aria-sort] { cursor: pointer; }
+.st-table thead th[aria-sort]:hover { background: var(--st-layer-accent-hover-01); }
+.st-table tbody tr { border-bottom: 1px solid var(--st-border-subtle-00); }
+.st-table tbody tr:last-child { border-bottom: 0; }
+.st-table tbody tr:hover { background: var(--st-layer-hover-01); }
+.st-table tbody td { color: var(--st-text-secondary); }
+.st-table--zebra tbody tr:nth-child(even) { background: var(--st-layer-01); }
+/* Table-header axis. Chosen once per product in the appearance config; recorded
+   in the ledger at binding; applied mechanically here and nowhere else. */
+[data-appearance~="table-head-tint"] .st-table thead th {
+  background: var(--st-blue-20); color: var(--st-blue-80);
+  border-bottom-color: var(--st-blue-30);
+}
+[data-appearance~="table-head-tint"] .st-table thead th[aria-sort]:hover { background: var(--st-blue-30); }
+[data-appearance~="table-head-strong"] .st-table thead th {
+  background: var(--st-blue-80); color: var(--st-text-on-color);
+  border-bottom-color: var(--st-blue-90);
+}
+[data-appearance~="table-head-strong"] .st-table thead th[aria-sort]:hover { background: var(--st-blue-90); }
+[data-appearance~="table-head-strong"] .st-table thead th .st-table__sortarrow { color: var(--st-text-on-color); }
+[data-theme="dark"] [data-appearance~="table-head-tint"] .st-table thead th,
+[data-theme="dark"][data-appearance~="table-head-tint"] .st-table thead th {
+  background: var(--st-blue-90); color: var(--st-blue-20); border-bottom-color: var(--st-blue-80);
+}
+.st-table tbody tr[aria-selected="true"] { background: var(--st-layer-selected-01); }
+.st-table tbody tr[aria-selected="true"] td { color: var(--st-text-primary); }
+.st-table__batchbar { display: flex; align-items: center; justify-content: space-between; height: 48px; padding-inline: var(--st-space-05); background: var(--st-background-brand); color: var(--st-text-on-color); }
+.st-table__batchbar .st-btn { color: var(--st-text-on-color); }
+
+/* ==========================================================================
+   Pager — position in a set that cannot be scrolled
+
+   Added 6 Sep 2026, adopted from an engagement proposal (CP-06). The system had no
+   pagination at all. That is fine at 40 rows and it is a defect at 68,402: a scroll bar
+   is not a POSITION. You cannot return to "about two thirds down", you cannot tell a
+   colleague where you were, and you cannot tell whether the set ended or the fetch did.
+
+   Composed instead from `.st-btn` and a bare <select>, which is what the engagement did
+   first, three things go wrong and all three were measured there:
+
+     1. the controls and the position read as one row of buttons, so the sentence that
+        says WHERE YOU ARE is the least prominent thing in a control whose only job is
+        to say where you are;
+     2. the per-page select inherits `.st-field`'s full width and has to be pinned with
+        an inline `width: auto` -- an inline style in the one place a component should
+        have existed;
+     3. nothing holds the position steady while the page changes, so the row reflows as
+        the count text changes width and Next moves out from under the cursor between
+        two clicks of Next.
+
+   WHAT IT MUST DO, whatever the expression:
+   - state position as a RANGE and a total, never a page number alone. "1-5 of 312"
+     answers a question that "page 1 of 63" does not.
+   - hold its width while the numbers inside it change.
+   - state a cap and why, where one exists. A silent maximum reads as a bug.
+   - stay usable when the total is UNKNOWN. A set still being counted has a position and
+     no total, and that is a real state rather than an error.
+   ========================================================================== */
+.st-pager { display: flex; align-items: center; gap: var(--st-space-05); flex-wrap: wrap;
+            padding-block: var(--st-space-04);
+            border-top: 1px solid var(--st-border-subtle-01); }
+.st-pager__nav { display: flex; align-items: center; gap: var(--st-space-03); flex: none; }
+/* The anchor, and the reason the component exists rather than a row of buttons. Tabular
+   figures and a reserved minimum so the row cannot reflow as the numbers change width --
+   the whole point of a pager is that the button you just pressed is still under your
+   cursor when you go to press it again. */
+.st-pager__position { flex: 1 1 auto; min-width: 18ch; text-align: center;
+                      font-size: var(--st-type-body-sm-size);
+                      line-height: var(--st-type-body-sm-lh);
+                      color: var(--st-text-primary); font-variant-numeric: tabular-nums;
+                      margin-block: 0; }
+.st-pager__position b { font-weight: 600; }
+/* The total is context; the range is what you came for. */
+.st-pager__of { color: var(--st-text-secondary); font-weight: 400; }
+/* A set still being counted. The position is real and the total is not known yet, and
+   saying so is not the same as putting a spinner over the whole table. */
+.st-pager__position--counting .st-pager__of { font-style: italic; }
+.st-pager__size { display: flex; align-items: center; gap: var(--st-space-03); flex: none; }
+/* `.st-field` is width:100% by design, and inside the pager it is sized to content.
+   This one declaration is the difference between a component and an inline style. */
+.st-pager__size .st-field { width: auto; min-width: 6ch; }
+/* Below md the position takes its own line and leads, because a three-part row at 320px
+   puts the anchor off screen -- and the anchor is the only part that had to be there. */
+@media (max-width: 671px) {
+  .st-pager { gap: var(--st-space-04); }
+  .st-pager__position { flex: 1 1 100%; order: -1; text-align: start; }
+}
+
+/* ==========================================================================
+   Modal
+   ========================================================================== */
+.st-modal-scrim { position: fixed; inset: 0; background: var(--st-overlay); display: grid; place-items: center; padding: var(--st-space-05); z-index: 100; }
+.st-modal {
+  background: var(--st-layer-02); color: var(--st-text-primary);
+  border-radius: var(--st-radius-xl); box-shadow: var(--st-elevation-03);
+  width: 640px; max-width: calc(100vw - 32px); max-height: calc(100vh - 64px);
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--st-border-subtle-01);
+}
+.st-modal--sm { width: 480px; } .st-modal--xs { width: 320px; } .st-modal--lg { width: 880px; }
+.st-modal__head { padding: var(--st-space-06) var(--st-space-06) var(--st-space-04); }
+.st-modal__label { color: var(--st-text-secondary); font: var(--st-type-label-weight) var(--st-type-label-size)/var(--st-type-label-lh) var(--st-font-sans); margin: 0 0 var(--st-space-01); }
+.st-modal__title { margin: 0; font: var(--st-type-heading-md-weight) var(--st-type-heading-md-size)/var(--st-type-heading-md-lh) var(--st-font-sans); }
+.st-modal__body { padding: 0 var(--st-space-06) var(--st-space-06); overflow-y: auto; color: var(--st-text-secondary); }
+.st-modal__foot { display: flex; justify-content: flex-end; gap: var(--st-space-03); padding: var(--st-space-05) var(--st-space-06); border-top: 1px solid var(--st-border-subtle-01); }
+
+/* ==========================================================================
+   Date picker
+   ========================================================================== */
+.st-cal {
+  width: 288px; background: var(--st-layer-02); color: var(--st-text-primary);
+  border: 1px solid var(--st-border-subtle-01); border-radius: var(--st-radius-lg);
+  box-shadow: var(--st-elevation-02); padding: var(--st-space-02) var(--st-space-02) var(--st-space-03);
+}
+.st-cal__head { display: flex; align-items: center; justify-content: space-between; height: 40px; padding-inline: var(--st-space-02); }
+.st-cal__month { font: var(--st-type-heading-sm-weight) var(--st-type-heading-sm-size)/1 var(--st-font-sans); }
+.st-cal__nav { width: 32px; height: 32px; display: grid; place-items: center; border: 0; background: none; border-radius: var(--st-radius-sm); cursor: pointer; color: var(--st-icon-primary); }
+.st-cal__nav:hover { background: var(--st-layer-hover-01); }
+.st-cal__grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.st-cal__dow { height: 32px; display: grid; place-items: center; color: var(--st-text-secondary); font: var(--st-type-label-weight) var(--st-type-label-size)/1 var(--st-font-sans); }
+.st-day {
+  height: 40px; display: grid; place-items: center; position: relative;
+  border: 0; background: none; cursor: pointer; color: var(--st-text-primary);
+  font: 400 var(--st-type-body-sm-size)/1 var(--st-font-sans);
+  font-variant-numeric: tabular-nums;
+}
+.st-day:hover { background: var(--st-layer-hover-01); }
+/* Out-of-month days are text-secondary, per Carbon's calendar table ('Next month |
+   text-color | $text-secondary'). They are NOT disabled -- they are selectable and
+   must stay above 4.5:1. Only genuinely out-of-range days take the disabled colour. */
+.st-day--muted { color: var(--st-text-secondary); }
+.st-day--today { color: var(--st-link-primary); font-weight: 600; }
+.st-day--today::after { content: ""; position: absolute; bottom: 6px; width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+.st-day--inrange { background: var(--st-highlight); }
+.st-day--start, .st-day--end, .st-day--selected { background: var(--st-background-brand); color: var(--st-text-on-color); }
+.st-day--start { border-radius: var(--st-radius-md) 0 0 var(--st-radius-md); }
+.st-day--end { border-radius: 0 var(--st-radius-md) var(--st-radius-md) 0; }
+.st-day--selected { border-radius: var(--st-radius-md); }
+.st-day:disabled { color: var(--st-text-disabled); cursor: not-allowed; background: none; }
+
+
+/* ==========================================================================
+   LAYOUT — grid, container, page, stack, row
+
+   Added. Carbon has a 2x Grid; Strata never extracted it, and the omission was
+   never recorded. The values are Carbon's so anything laid out against Carbon
+   maps without arithmetic; the implementation is CSS Grid rather than 80
+   generated per-breakpoint column classes.
+
+   Span is set with custom properties, not classes:
+     <div class="st-col" style="--span:16; --span-md:8; --span-lg:4">
+   ========================================================================== */
+.st-container { max-width: var(--st-container-max); margin-inline: auto;
+                padding-inline: var(--st-container-margin); }
+.st-container--full { max-width: none; }
+/* A page narrower than the shell. `.st-container` caps the frame and
+   `.st-page__sub` caps one measure; a form-heavy or prose page that wants to be
+   narrower than the whole shell had nothing, and four screens set it inline.
+   45rem is a comfortable form and reading width at the body sizes in the scale. */
+.st-container--narrow { max-width: 45rem; }
+
+.st-grid { display: grid; grid-template-columns: repeat(var(--st-grid-columns), minmax(0, 1fr));
+           gap: var(--st-grid-gutter); }
+.st-grid--narrow    { gap: var(--st-grid-gutter-narrow); }
+.st-grid--condensed { gap: var(--st-grid-gutter-condensed); }
+
+/* Mobile-first: --span applies everywhere, --span-md and --span-lg widen it.
+   Each falls back to the step below, so declaring only --span-lg still works. */
+/* Defensive: a grid child with NO .st-col auto-places into one column of sixteen
+   and renders as a sliver. It does not error, and the failure reads as a CSS bug
+   rather than a missing class -- reported from the field as costing a debugging
+   cycle. Applying the same rule to every child makes the forgotten case render
+   full-width, which is obviously wrong rather than mysteriously wrong.
+   `.st-col` remains the class to write; it is now sugar rather than load-bearing. */
+.st-grid > * { grid-column: span var(--span, var(--st-grid-columns)); min-width: 0; }
+.st-col { grid-column: span var(--span, var(--st-grid-columns)); min-width: 0; }
+/* Shortcuts for the common splits, so the ordinary case needs no inline style.
+   Span-as-custom-property bought us one class instead of eighty; the cost was
+   inline `style` attributes everywhere, which makes "no literals" harder to police. */
+.st-col--half       { --span-md: 8; }
+.st-col--third      { --span-md: 8; --span-lg: 5; }
+.st-col--two-thirds { --span-md: 8; --span-lg: 11; }
+.st-col--quarter    { --span-md: 8; --span-lg: 4; }
+@media (min-width: 672px)  { .st-col { grid-column: span var(--span-md, var(--span, var(--st-grid-columns))); } }
+@media (min-width: 1056px) { .st-col { grid-column: span var(--span-lg, var(--span-md, var(--span, var(--st-grid-columns)))); } }
+
+/* Composition primitives. --gap on the element overrides the default. */
+.st-stack { display: flex; flex-direction: column; gap: var(--gap, var(--st-space-05)); min-width: 0; }
+.st-row   { display: flex; align-items: center; gap: var(--gap, var(--st-space-05)); flex-wrap: wrap; min-width: 0; }
+.st-row--top     { align-items: flex-start; }
+.st-row--between { justify-content: space-between; }
+.st-row--end     { justify-content: flex-end; }
+.st-fill { flex: 1 1 auto; min-width: 0; }
+
+.st-page { padding-block: var(--st-space-07) var(--st-space-10); }
+.st-page__head { display: flex; align-items: flex-start; justify-content: space-between;
+                 gap: var(--st-space-05); margin-bottom: var(--st-space-06); flex-wrap: wrap; }
+.st-page__title { margin: 0 0 var(--st-space-02); }
+.st-page__sub   { margin: 0; color: var(--st-text-secondary); max-width: 68ch; }
+.st-section { margin-block: var(--st-space-08); }
+.st-section__head { display: flex; align-items: baseline; justify-content: space-between;
+                    gap: var(--st-space-04); margin-bottom: var(--st-space-04); }
+.st-hr { border: 0; border-top: 1px solid var(--st-border-subtle-01); margin-block: var(--st-space-07); }
+
+/* [6 Sep 2026] A component that carries its own OUTER margin double-counts inside a
+   container that already owns the gap: `.st-section`'s 40 plus a 40-gap stack renders
+   120 between two sections, and spacing set two ways cannot be reasoned about by
+   anybody. The composition conventions say a gap is set with `--gap` and nothing else,
+   so a component carrying its own margin is a conventions defect -- reported from an
+   engagement that patched it locally on two components and could not patch the rule.
+   The margin is WITHDRAWN inside a gapped container rather than deleted outright,
+   because standalone use is real and every existing artefact relies on it. The
+   container owns the gap; the child stops arguing. */
+.st-stack > .st-section, .st-grid > .st-section, .st-row > .st-section,
+.st-col > .st-section { margin-block: 0; }
+.st-stack > .st-formitem, .st-grid > .st-formitem, .st-row > .st-formitem,
+.st-col > .st-formitem { margin-bottom: 0; }
+
+/* ==========================================================================
+   SHELL — the application frame
+
+   Anatomy derived from Carbon's UI Shell; identity deliberately not. No product
+   switcher, no right panel, no IBM chrome. Region classes carry the same codes
+   the region register uses, so a requirement can point at one.
+
+   Regions:
+     app.identity       .st-shell__brand      always
+     app.primary-nav    .st-shell__nav        always
+     app.locator        .st-crumb             always
+     app.work-waiting   .st-waiting           when any flow crosses personas
+     app.secondary-nav  .st-shell__rail       when nav depth >= 2
+     app.utility        .st-shell__util       optional, CAP OF FOUR
+     app.account        .st-shell__account    always
+     app.content        .st-shell__main       always
+     app.transient      .st-toasts            when a transient pattern exists
+
+   Two variants, one region set. `--task` for work that arrives and is cleared;
+   `--explorer` for a structure you navigate. They differ in prominence only.
+   ========================================================================== */
+.st-shell { min-height: 100vh; display: grid;
+            grid-template-columns: var(--st-shell-rail) 1fr;
+            grid-template-rows: var(--st-shell-header) 1fr;
+            grid-template-areas: "header header" "rail main";
+            background: var(--st-background); }
+.st-shell--norail { grid-template-columns: 1fr; grid-template-areas: "header" "main"; }
+/* [E-26] `app.detail`. The column only exists while the panel is open, so a
+   product that never opens one pays nothing -- which is the whole difference
+   between this and the persistent Carbon panel the shell spec declined. */
+.st-shell:has(> .st-shell__panel[data-open="true"]) {
+            grid-template-columns: var(--st-shell-rail) 1fr var(--st-shell-panel);
+            grid-template-areas: "header header header" "rail main panel"; }
+.st-shell--norail:has(> .st-shell__panel[data-open="true"]) {
+            grid-template-columns: 1fr var(--st-shell-panel);
+            grid-template-areas: "header header" "main panel"; }
+@media (max-width: 671px) {
+  .st-shell { grid-template-columns: 1fr; grid-template-areas: "header" "main"; }
+  .st-shell__rail { display: none; }
+  .st-shell__rail[data-open="true"] { display: block; position: fixed; inset: var(--st-shell-header) auto 0 0;
+                                      height: auto; width: var(--st-shell-rail); z-index: 40; }
+}
+
+/* Skip link. Keyboard-only, but must be visible when focused -- a skip link that
+   stays hidden on focus is worse than none, because it steals a tab stop. */
+.st-skip { position: absolute; left: -9999px; z-index: 100; }
+.st-skip:focus { left: var(--st-space-04); top: var(--st-space-04); padding: var(--st-space-03) var(--st-space-05);
+                 background: var(--st-layer-02); color: var(--st-text-primary);
+                 border: 1px solid var(--st-border-strong-01); border-radius: var(--st-radius-md); }
+
+/* --st-shell-offset exists so a prototype harness bar (a review toolbar, a
+   fidelity banner) can push the sticky header down without overriding a system
+   class. Reported from the field as the one legitimate shell override; this
+   removes the need for it. */
+/* [encode E-17] Light chrome default is WHITE with a hairline — the coloured
+   chrome is the axis, not a darker grey. The statusband keeps layer-01 so the
+   frame still has one quiet tonal step. */
+.st-shell__header { grid-area: header; display: flex; align-items: center; gap: var(--st-space-05);
+                    padding-inline: var(--st-space-05); background: var(--st-layer-02);
+                    border-bottom: 1px solid var(--st-border-subtle-01);
+                    position: sticky; top: var(--st-shell-offset, 0px); z-index: 30; }
+.st-shell__brand { display: flex; align-items: center; gap: var(--st-space-03); font-weight: 600;
+                   color: var(--st-text-primary); text-decoration: none; white-space: nowrap; }
+.st-shell__brand small { font-weight: 400; color: var(--st-text-secondary); }
+
+.st-shell__nav { display: flex; gap: var(--st-space-02); margin-inline-start: var(--st-space-05); min-width: 0; }
+.st-shell__navlink { display: inline-flex; align-items: center; height: var(--st-shell-header);
+                     padding-inline: var(--st-space-04); color: var(--st-text-secondary);
+                     text-decoration: none; font-size: var(--st-type-body-sm-size);
+                     border-bottom: 2px solid transparent; }
+.st-shell__navlink:hover { background: var(--st-layer-hover-01); color: var(--st-text-primary); }
+.st-shell__navlink[aria-current="page"] { color: var(--st-text-primary); font-weight: 600;
+                                          border-bottom-color: var(--st-border-interactive); }
+.st-shell__navlink:focus-visible { outline: 2px solid var(--st-focus); outline-offset: -2px; }
+.st-shell__spacer { margin-inline-start: auto; }
+
+/* app.work-waiting. No Carbon equivalent, and the reason it exists is specific:
+   every persona handoff has to answer "what tells the next person there is
+   something waiting", and this is the only region that persists across screens.
+   It renders ONLY when a flow crosses personas -- an empty one is the bell
+   nobody looks at. */
+.st-waiting { display: inline-flex; align-items: center; gap: var(--st-space-03);
+              height: var(--st-size-sm); padding-inline: var(--st-space-04);
+              border: 1px solid var(--st-border-subtle-01); border-radius: var(--st-radius-full);
+              background: var(--st-layer-02); color: var(--st-text-primary);
+              font-size: var(--st-type-body-sm-size); text-decoration: none; }
+.st-waiting:hover { background: var(--st-layer-hover-01); }
+.st-waiting:focus-visible { outline: 2px solid var(--st-focus); outline-offset: 1px; }
+.st-waiting__count { font-weight: 600; font-variant-numeric: tabular-nums; }
+.st-waiting--none { color: var(--st-text-secondary); }
+/* Something waiting is not a status -- it is neither good nor bad, it is yours.
+   Carrying it in a status colour would spend the alert budget on routine work. */
+.st-waiting--due { border-color: var(--st-support-warning); }
+.st-waiting--due .st-waiting__count { color: var(--st-support-warning); }
+
+.st-shell__util { display: flex; gap: var(--st-space-02); }
+.st-shell__utilbtn { display: inline-grid; place-items: center; width: var(--st-size-sm); height: var(--st-size-sm);
+                     border: 0; background: none; color: var(--st-icon-secondary);
+                     border-radius: var(--st-radius-md); cursor: pointer; }
+.st-shell__utilbtn:hover { background: var(--st-layer-hover-01); color: var(--st-icon-primary); }
+.st-shell__utilbtn:focus-visible { outline: 2px solid var(--st-focus); outline-offset: 1px; }
+.st-shell__account { display: inline-flex; align-items: center; gap: var(--st-space-03);
+                     color: var(--st-text-secondary); font-size: var(--st-type-body-sm-size); }
+.st-shell__avatar { width: 24px; height: 24px; border-radius: var(--st-radius-full);
+                    background: var(--st-layer-accent-01); color: var(--st-text-primary);
+                    display: grid; place-items: center; font-size: var(--st-type-label-size); font-weight: 600; }
+
+/* app.secondary-nav. ONE level of nesting. Three tiers is a wayfinding failure
+   and a scale question -- if the hierarchy is deeper, the answer is page-level
+   tabs or a different screen split, not a third rail tier. */
+/* [E-27] `overflow-y: auto` was there from the beginning and never did anything,
+   because the rail is a grid item in a `1fr` row: on a 3,600px page it stretched to
+   3,600px and never overflowed. Nothing scrolled, so nothing could stick — E-27's
+   sticky group headers would have been inert. The rail has to be its own scroll
+   container, pinned below the sticky header, for either to work. `--st-shell-offset`
+   is respected because a prototype harness bar can sit above the shell. */
+.st-shell__rail { grid-area: rail; align-self: start;
+                  position: sticky;
+                  top: calc(var(--st-shell-offset, 0px) + var(--st-shell-header));
+                  height: calc(100vh - var(--st-shell-offset, 0px) - var(--st-shell-header));
+                  background: var(--st-layer-01);
+                  border-right: 1px solid var(--st-border-subtle-01);
+                  overflow-y: auto; }
+/* [E-27, 2026-08-23] Sectioned with sticky group headers — chosen by eye from
+   five rendered options. Groups are separated by a hairline rather than a gap,
+   and the label sticks to the top of the rail's scroll container while its own
+   items pass under it.
+
+   What it fixes: the single biggest failure of a long rail is that the group you
+   are inside scrolls away, so at 312 modules you are reading a list of names with
+   no idea which group they belong to. A sticky header costs nothing horizontally,
+   which is the currency this frame is short of.
+
+   What it costs, stated rather than discovered: the roomier rhythm shows fewer
+   rows at once, so there is more scrolling in exactly the product that has the
+   most to scroll. That trade was made deliberately. */
+.st-rail__group { padding-block: var(--st-space-04); }
+.st-rail__group + .st-rail__group { border-top: 1px solid var(--st-border-subtle-01); }
+/* [encode 2026-08-20, ledger E-16] The explorer rail goes light and soft: rounded
+   row items with an icon slot, selection carried by a blue-10 wash + weight +
+   icon colour instead of the border-left rule. Icons are the stroke set, always
+   sized (an unsized <use> defaults to 300x150 — construction-floor rule). */
+.st-rail__link { display: flex; align-items: center; gap: var(--st-space-03);
+                 margin-inline: var(--st-space-03);
+                 padding: var(--st-space-04); color: var(--st-text-secondary);
+                 text-decoration: none; font-size: var(--st-type-body-md-size);
+                 border-radius: var(--st-radius-md); }
+.st-rail__link svg { width: 16px; height: 16px; flex: none; color: var(--st-icon-secondary); }
+.st-rail__link .st-rail__meta { margin-left: auto; }
+.st-rail__link:hover { background: var(--st-layer-hover-01); color: var(--st-text-primary); }
+/* [E-25, 2026-08-23] Was `blue-10` wash + `blue-80` text with the icon on
+   `--st-link-primary`. E-16 wrote that on the scaffold brand, where blue IS
+   primary, so it looked right and nobody rendered it anywhere else. On deloitte
+   `--st-link-primary` is #076636, so a selected row was a BLUE wash with BLUE
+   text and a GREEN icon -- three channels, two hues, on a green brand.
+
+   The contrast audit passed it every build, because contrast measures legibility
+   and cannot see that a hue is wrong for the brand. This is the brand-swap
+   guarantee failing one layer above `check_role_separation()`: the rail never
+   asked the role wheel anything, it reached past the semantic layer and took a
+   ramp value directly.
+
+   The system already had the answer and one component was already using it.
+   `.st-table tbody tr[aria-selected="true"]` washes with `--st-layer-selected-01`,
+   which is deliberately NEUTRAL and therefore brand-independent. Selection is now
+   one expression across both surfaces: neutral wash + primary text + weight, with
+   the brand appearing as the icon accent only. E-16's "wash, not a border-left
+   rule" decision is preserved -- only the hue changed. */
+.st-rail__link[aria-current="page"] { background: var(--st-layer-selected-01);
+                                      color: var(--st-text-primary); font-weight: 600; }
+.st-rail__link[aria-current="page"] svg { color: var(--st-border-interactive); }
+.st-rail__link:focus-visible { outline: 2px solid var(--st-focus); outline-offset: -2px; }
+.st-rail__meta { color: var(--st-text-helper); font-variant-numeric: tabular-nums; }
+/* `.st-waiting--due` existed and its rail-side mirror did not, which is where the
+   number is actually read. Same treatment, same meaning. */
+.st-rail__meta--due { color: var(--st-support-warning); font-weight: 600; }
+
+/* --------------------------------------------------------------------------
+   Rail: groups that count, collapse and nest
+
+   [brief 6 R1/R5 + the confirmed F4 frame - 2026-08-23] The rail was cut for a
+   rail with twenty destinations in it. The confirmed frame puts 312 modules, 41
+   lists, 184 views and 62 actions behind it, and three things break at that
+   volume.
+
+   `.st-rail__label` rendered a word and stopped, so a group of 312 could not
+   state its size or fold shut. `.st-disclose` counts and collapses and is the
+   obvious substitute, and it is the wrong one: it is a bordered card with its
+   own background, so five groups inside a 256px rail draws five boxes inside a
+   box. The label becomes a button instead and keeps the rail's flat surface.
+
+   SHELL-SPEC says "the rail supports one level of nesting". It said so with no
+   expression in the CSS to support it -- the second place in this system where a
+   document asserted a capability the code did not have. The confirmed frame
+   needs exactly that level (business area -> module) and stops there, because
+   depth beyond it is a drill, which the spec sends to the page.
+
+   And at 312 the rail's DEFAULT state is truncated, so the overflow row is not
+   an edge case. It is the staged-view rule from PATTERNS.md, applied here: a
+   band that shows part of a set states the rest, inside the component.
+   -------------------------------------------------------------------------- */
+/* The label is a control now, so it takes a control's whole hit area and none of
+   a button's chrome. Same padding as a link, so the group header and its items
+   sit on one vertical rhythm. */
+/* Full-bleed and opaque, because a sticky header that lets rows show through it
+   is worse than no sticky header. `--st-layer-01` is the rail's own surface. */
+.st-rail__label { position: sticky; top: 0; z-index: 1;
+                  display: flex; align-items: center; gap: var(--st-space-03);
+                  width: 100%; padding: var(--st-space-03) var(--st-space-05);
+                  background: var(--st-layer-01);
+                  border: 0; text-align: start; font: inherit;
+                  font-size: var(--st-type-label-size);
+                  letter-spacing: var(--st-type-label-ls);
+                  text-transform: uppercase; color: var(--st-text-secondary); }
+button.st-rail__label { cursor: pointer; }
+button.st-rail__label:hover { background: var(--st-layer-hover-01); color: var(--st-text-primary); }
+button.st-rail__label:focus-visible { outline: 2px solid var(--st-focus); outline-offset: -2px; }
+/* Leading, because it belongs to the label it opens -- and because the trailing
+   slot is spoken for by the count. That is the answer to R2's "one slot, two
+   meanings": the second meaning goes to the other end of the row, not into the
+   same slot wearing a different hat. */
+.st-rail__chev { flex: none; width: 14px; color: var(--st-icon-secondary);
+                 transition: transform var(--st-duration-fast) var(--st-ease-standard); }
+.st-rail__group[data-open="true"] > .st-rail__label .st-rail__chev { transform: rotate(90deg); }
+.st-rail__group[data-open="false"] > .st-rail__items { display: none; }
+/* A closed group that states its size lets a person choose without opening it --
+   the same reason `.st-disclose__meta` exists, in a rail that cannot afford a card. */
+.st-rail__count { margin-inline-start: auto; color: var(--st-text-helper);
+                  font-variant-numeric: tabular-nums; text-transform: none;
+                  letter-spacing: 0; font-weight: 400; }
+.st-rail__items { display: block; }
+/* The one level SHELL-SPEC allows. There is deliberately no `--sub` under a
+   `--sub`: a third tier is a drill, and drills belong to the page. */
+.st-rail__link--sub { padding-inline-start: var(--st-space-07); }
+/* Overflow. Never a silent cut -- the row states what it did not show. */
+.st-rail__more { display: block; width: calc(100% - (2 * var(--st-space-03)));
+                 margin-inline: var(--st-space-03);
+                 padding: var(--st-space-02) var(--st-space-04) var(--st-space-02) var(--st-space-07);
+                 background: none; border: 0; text-align: start; cursor: pointer;
+                 color: var(--st-text-helper); font: inherit;
+                 font-size: var(--st-type-helper-size);
+                 border-radius: var(--st-radius-md); }
+.st-rail__more:hover { background: var(--st-layer-hover-01); color: var(--st-text-primary); }
+.st-rail__more:focus-visible { outline: 2px solid var(--st-focus); outline-offset: -2px; }
+
+.st-shell__main { grid-area: main; min-width: 0; }
+.st-shell__main:focus { outline: none; }
+
+/* app.locator. States position in text, not only by highlight -- the same rule
+   the stepper follows, and for the same reason: it has to survive greyscale and
+   reach a screen reader. */
+.st-crumb { display: flex; align-items: center; gap: var(--st-space-03); flex-wrap: wrap;
+            padding-block: var(--st-space-04); color: var(--st-text-secondary);
+            font-size: var(--st-type-body-sm-size); }
+.st-crumb a { color: var(--st-link-primary); text-decoration: none; }
+.st-crumb a:hover { text-decoration: underline; }
+.st-crumb li { list-style: none; display: flex; align-items: center; gap: var(--st-space-03); }
+.st-crumb li + li::before { content: "/"; color: var(--st-text-helper); }
+.st-crumb [aria-current="page"] { color: var(--st-text-primary); font-weight: 600; }
+
+/* The two variants. Same regions, different prominence. A shell that tries to
+   serve both gives you a rail nobody uses and a queue nobody finds. */
+.st-shell--task .st-crumb { display: none; }
+.st-shell--task .st-waiting { height: var(--st-size-md); font-weight: 600; }
+.st-shell--explorer .st-waiting { padding-inline: var(--st-space-03); }
+
+/* ==========================================================================
+   APPEARANCE — the product-constant axes
+   [encode 2026-08-20, ledger E-17]
+
+   One `data-appearance` attribute on the shell root (or <html>) is the ONLY
+   mechanical way to set the axes. Space-separated values; each axis is chosen
+   ONCE per product, at the same moment as the binding decision, recorded in the
+   ledger, and held on every screen — variation lives BETWEEN products, never
+   between screens of one product. A product that mixes coloured and light
+   chrome screen-by-screen has un-chosen the choice.
+
+     chrome:      (default light) | chrome-coloured      — page chrome on blue-90
+     table-head:  (default grey)  | table-head-tint | table-head-strong
+     shell:       .st-shell--task | .st-shell--explorer  (existing variants)
+     density:     data-density (existing)
+
+   The dot-chip tag is deliberately NOT an axis. One tag, everywhere.
+
+   Example: <div class="st-shell st-shell--task" data-appearance="chrome-coloured table-head-tint">
+   ========================================================================== */
+[data-appearance~="chrome-coloured"] .st-shell__header {
+  background: var(--st-blue-90); border-bottom: 0;
+}
+[data-appearance~="chrome-coloured"] .st-shell__brand { color: var(--st-text-on-color); }
+[data-appearance~="chrome-coloured"] .st-shell__brand small { color: var(--st-blue-30); }
+[data-appearance~="chrome-coloured"] .st-shell__navlink { color: var(--st-blue-30); }
+[data-appearance~="chrome-coloured"] .st-shell__navlink:hover {
+  color: var(--st-text-on-color); background: rgba(255,255,255,0.06);
+}
+[data-appearance~="chrome-coloured"] .st-shell__navlink[aria-current="page"] {
+  color: var(--st-text-on-color); border-bottom-color: var(--st-blue-40);
+}
+[data-appearance~="chrome-coloured"] .st-waiting {
+  background: var(--st-blue-80); border-color: var(--st-blue-60); color: var(--st-text-on-color);
+}
+[data-appearance~="chrome-coloured"] .st-waiting:hover { background: var(--st-blue-70); }
+[data-appearance~="chrome-coloured"] .st-waiting__count { color: var(--st-blue-30); }
+[data-appearance~="chrome-coloured"] .st-shell__account { color: var(--st-blue-30); }
+[data-appearance~="chrome-coloured"] .st-shell__avatar { background: var(--st-blue-20); color: var(--st-blue-80); }
+[data-appearance~="chrome-coloured"] .st-shell__utilbtn { color: var(--st-blue-30); }
+[data-appearance~="chrome-coloured"] .st-shell__utilbtn:hover {
+  color: var(--st-text-on-color); background: rgba(255,255,255,0.06);
+}
+/* Focus on the dark chrome: the standard focus blue vanishes on blue-90; the
+   ring flips to the light interactive grade — same mechanism as dark theme. */
+[data-appearance~="chrome-coloured"] .st-shell__header :focus-visible {
+  outline-color: var(--st-blue-40);
+}
+
+/* app.transient */
+.st-toasts { position: fixed; inset-block-start: auto; inset-block-end: var(--st-space-05);
+             inset-inline-end: var(--st-space-05); z-index: 60;
+             display: flex; flex-direction: column; gap: var(--st-space-03); max-width: 24rem; }
+/* [E-28] The toast lands bottom-right and the panel's action row is bottom-right,
+   so an open panel put a transient message on top of the primary action. Toasts
+   correctly win on z-index -- a message that can be covered is not a message --
+   so the toast moves instead. Only in the side-by-side case: below 1055px the
+   panel is a sheet over the list and the toast belongs where it always was. */
+@media (min-width: 1056px) {
+  .st-shell:has(> .st-shell__panel[data-open="true"]) ~ .st-toasts,
+  .st-shell:has(> .st-shell__panel[data-open="true"]) .st-toasts {
+             inset-inline-end: calc(var(--st-shell-panel) + var(--st-space-05)); }
+}
+
+/* ==========================================================================
+   Toast — notification-transient
+
+   Extracted from Carbon's ToastNotification. Strata previously had no transient
+   notification and the gap was documented as "deliberate" without a decision
+   behind it; this settles it. `.st-note` remains the default -- persisting until
+   dismissed is safer -- and toast is for confirmations of an action the person
+   just took, where the information is genuinely disposable.
+
+   Never carry an error or anything actionable in a toast. If it needs a
+   response, it must not be able to disappear before the response.
+   ========================================================================== */
+.st-toast { display: flex; gap: var(--st-space-04); padding: var(--st-space-04) var(--st-space-05);
+            background: var(--st-layer-02); color: var(--st-text-primary);
+            border: 1px solid var(--st-border-subtle-01); border-left: 3px solid var(--st-border-strong-01);
+            border-radius: var(--st-radius-md); box-shadow: var(--st-elevation-02);
+            font-size: var(--st-type-body-sm-size); }
+.st-toast--success { border-left-color: var(--st-support-success); }
+.st-toast--warning { border-left-color: var(--st-support-warning); }
+.st-toast--info    { border-left-color: var(--st-support-info); }
+.st-toast__body { flex: 1; min-width: 0; }
+.st-toast__title { font-weight: 600; }
+.st-toast__close { border: 0; background: none; color: var(--st-icon-secondary); cursor: pointer;
+                   width: 20px; height: 20px; border-radius: var(--st-radius-sm); line-height: 1; }
+.st-toast__close:hover { background: var(--st-layer-hover-01); color: var(--st-icon-primary); }
+.st-toast__close:focus-visible { outline: 2px solid var(--st-focus); outline-offset: 1px; }
+
+/* ==========================================================================
+   Search — the `search` pattern
+
+   Extracted from Carbon's Search, with one recorded divergence: the count is
+   part of the component, not optional decoration. A search field with no live
+   count leaves a person typing into silence, and the idle state carries the
+   TOTAL so they know the size of the problem before they start.
+
+   The count must be announced as well as drawn: aria-live="polite" on
+   `.st-search__count`.
+   ========================================================================== */
+.st-search { display: block; }
+.st-search__field { position: relative; display: block; }
+.st-search__icon { position: absolute; inset-inline-start: var(--st-space-04); top: 50%;
+                   transform: translateY(-50%); color: var(--st-icon-secondary);
+                   pointer-events: none; line-height: 1; }
+.st-search__field .st-field { padding-inline: 2.125rem 2rem; width: 100%; }
+.st-search__clear { position: absolute; inset-inline-end: var(--st-space-02); top: 50%;
+                    transform: translateY(-50%); border: 0; background: none; cursor: pointer;
+                    color: var(--st-icon-secondary); width: 24px; height: 24px;
+                    border-radius: var(--st-radius-full); line-height: 1; }
+.st-search__clear:hover { background: var(--st-layer-hover-01); color: var(--st-text-primary); }
+.st-search__clear:focus-visible { outline: 2px solid var(--st-focus); outline-offset: 1px; }
+.st-search__count { margin-top: var(--st-space-03); font-size: var(--st-type-helper-size);
+                    color: var(--st-text-secondary); }
+.st-search__count b { color: var(--st-text-primary); font-variant-numeric: tabular-nums; }
+.st-search__count--over { color: var(--st-support-warning); }
+
+/* ==========================================================================
+   Disclosure — the `disclosure` pattern
+
+   Extracted from Carbon's Accordion, built on native <details>/<summary> so
+   aria-expanded, keyboard operation and find-in-page come for free rather than
+   being reimplemented and half-finished.
+
+   The WHOLE summary row is the control. A 12px chevron hit target is a defect.
+   ========================================================================== */
+.st-disclose { border: 1px solid var(--st-border-subtle-00); border-radius: var(--st-radius-lg);
+               overflow: hidden; background: var(--st-layer-02); }
+.st-disclose + .st-disclose { margin-top: var(--st-space-03); }
+.st-disclose > summary { display: flex; align-items: center; gap: var(--st-space-04);
+                         padding: var(--st-space-04) var(--st-space-05); cursor: pointer;
+                         list-style: none; font-size: var(--st-type-body-sm-size);
+                         min-height: var(--st-density-control); }
+.st-disclose > summary::-webkit-details-marker { display: none; }
+.st-disclose > summary:hover { background: var(--st-layer-hover-01); }
+.st-disclose > summary:focus-visible { outline: 2px solid var(--st-focus); outline-offset: -2px; }
+.st-disclose__chev { flex: none; width: 14px; color: var(--st-icon-secondary);
+                     transition: transform var(--st-duration-fast) var(--st-ease-standard); }
+.st-disclose[open] > summary .st-disclose__chev { transform: rotate(90deg); }
+.st-disclose__title { font-weight: 600; }
+/* The meta slot is what makes this usable as navigation: a collapsed section
+   that states its own size lets a person choose without opening it. */
+.st-disclose__meta { margin-inline-start: auto; font-size: var(--st-type-helper-size);
+                     color: var(--st-text-helper); font-variant-numeric: tabular-nums; }
+.st-disclose__body { padding: var(--st-space-05); border-top: 1px solid var(--st-border-subtle-01);
+                     background: var(--st-layer-01); }
+/* Nothing to expand means the control is ABSENT, not disabled. A disabled
+   expander implies there is content behind it. */
+.st-disclose--empty > summary { cursor: default; color: var(--st-text-secondary); }
+.st-disclose--empty > summary .st-disclose__chev { visibility: hidden; }
+
+
+/* ==========================================================================
+   Panel -- the dismissible reveal pane  (region `app.detail`)
+
+   [CP-01, revised by the engagement - ledger E-26 - 2026-08-23] Show everything
+   a row could not carry, without the list moving or narrowing.
+
+   SHELL-SPEC said "No right panel". Read its reason and the refusal turns out to
+   be narrower than the sentence: "Carbon's exists for system-level content most
+   engagements do not have, and a PERSISTENT EMPTY panel is an invitation." This
+   panel is not persistent -- it exists only while a row is selected -- so the
+   stated reason never covered it. The persistent Carbon panel is still declined.
+
+   Why nothing existing served, named. `.st-modal` has a scrim, and the scrim
+   blocks the list the task depends on comparing against. `.st-disclose` expands
+   INSIDE the row, so the list reflows and the person loses their place -- which
+   in a queue of 247 is the whole cost. A third `.st-col` is static: it cannot
+   open or close, and it charges its width even when nothing is selected.
+
+   One tension worth stating rather than hiding. The proposal says "the centre
+   list does not reflow when it opens", and a grid column necessarily narrows the
+   centre. What is actually preserved is the TABLE: `.st-table-wrap` scrolls, so
+   columns keep their widths and rows do not re-wrap. The pane narrows; the list
+   does not re-lay-out. If the requirement is literally that the centre keeps its
+   pixel width, this is the wrong construction and the panel must overlay.
+   ========================================================================== */
+/* Body scrolls, head and foot hold -- the same anatomy `.st-modal` already uses,
+   because they are the same problem: a fixed-height surface whose middle grows.
+   A sticky foot in a short panel floats mid-pane, which reads as unfinished. */
+/* Same fix as the rail, same reason, found the same way. A grid item in a `1fr`
+   row stretches to the row's height, so on a 3,600px page the panel was 3,600px
+   tall: `__body`'s `overflow-y: auto` never engaged and `__foot` sat at the bottom
+   of the PAGE rather than the bottom of the pane. Two shell regions, one defect.
+
+   The general rule, now in SHELL-SPEC: any shell region that is meant to scroll
+   independently must opt out of the row's stretch (`align-self: start`) and be
+   given an explicit viewport-relative height. "It has overflow: auto" is not
+   evidence that anything scrolls. */
+.st-shell__panel { grid-area: panel; align-self: start;
+                   position: sticky;
+                   top: calc(var(--st-shell-offset, 0px) + var(--st-shell-header));
+                   height: calc(100vh - var(--st-shell-offset, 0px) - var(--st-shell-header));
+                   display: flex; flex-direction: column;
+                   background: var(--st-layer-01);
+                   border-inline-start: 1px solid var(--st-border-subtle-01);
+                   overflow: hidden; }
+.st-shell__panel[data-open="false"], .st-shell__panel:not([data-open]) { display: none; }
+.st-panel__head { flex: none; display: flex; align-items: flex-start; gap: var(--st-space-03);
+                  padding: var(--st-space-05); }
+.st-panel__title { flex: 1; min-width: 0; margin: 0;
+                   font: var(--st-type-heading-sm-weight) var(--st-type-heading-sm-size)/var(--st-type-heading-sm-lh) var(--st-font-sans);
+                   color: var(--st-text-primary); }
+/* The dismiss control is the panel's only required chrome: a pane that opens on
+   selection and cannot be closed is a third column wearing a panel's clothes. */
+.st-panel__dismiss { flex: none; display: inline-flex; align-items: center;
+                     justify-content: center; width: var(--st-size-md); height: var(--st-size-md);
+                     padding: 0; border: 0; background: none; cursor: pointer;
+                     color: var(--st-icon-secondary); border-radius: var(--st-radius-md); }
+.st-panel__dismiss:hover { background: var(--st-layer-hover-01); color: var(--st-text-primary); }
+.st-panel__dismiss:focus-visible { outline: 2px solid var(--st-focus); outline-offset: -2px; }
+/* [E-28, 2026-08-23] The panel is TABBED, and the tabs are how the panel changes
+   shape when the situation does. Chosen by eye from five rendered options.
+
+   `.st-tablist` is composed, not reinvented -- panel facets are peer surfaces you
+   revisit freely, which is exactly what the map already resolves `navigation-set`
+   to. Nothing here duplicates a tab.
+
+   THE CAP IS THREE. Three tabs fit a 320px column; four are cramped, and a fourth
+   is the point at which a panel is being asked to be a page. A situational tab
+   counts toward the three.
+
+   A situational tab carries `data-attention` when it holds something unanswered.
+   The dot is `--st-support-warning`, the same token `.st-rail__meta--due` uses for
+   the same meaning, and it is a SECOND channel: the tab's own label is the first,
+   which is why the label must name the thing ("Decision") rather than being a
+   glyph. A panel with an unanswered tab opens on that tab -- otherwise the
+   decision is behind a click, which was the whole objection to tabbing it.
+   ========================================================================== */
+.st-shell__panel > .st-tablist { flex: none; padding-inline: var(--st-space-05); }
+.st-shell__panel .st-tab { display: inline-flex; align-items: center; gap: var(--st-space-02); }
+.st-shell__panel .st-tab[data-attention="true"]::before {
+                  content: ""; flex: none; width: 6px; height: 6px;
+                  border-radius: var(--st-radius-full);
+                  background: var(--st-support-warning); }
+
+.st-panel__body { flex: 1; min-height: 0; overflow-y: auto;
+                  padding: 0 var(--st-space-05) var(--st-space-05); }
+/* The delineated fragment -- a formula, a quoted definition, a withheld value.
+   Borrowed from the carded option, kept to the ONE thing that must read as an
+   object rather than applied to every section, because three borders in a 320px
+   column is what made that option lose.
+
+   Separated from `.st-tile` on three cues, because a tile means "a record" and
+   this means "a fragment", and two patterns may not share one costume: the tile
+   is RAISED (white `layer-02`, `elevation-01`, radius-xl), this is RECESSED
+   (`layer-accent-01` fill, no shadow, radius-md). If you find yourself wanting a
+   title on it rather than a caps label, you wanted a tile. */
+.st-panel__box { background: var(--st-layer-accent-01);
+                 border-radius: var(--st-radius-md);
+                 padding: var(--st-space-04); }
+.st-panel__box + .st-panel__box { margin-top: var(--st-space-03); }
+.st-panel__boxlabel { display: block; margin-bottom: var(--st-space-02);
+                      font: var(--st-type-label-weight) var(--st-type-label-size)/var(--st-type-label-lh) var(--st-font-sans);
+                      letter-spacing: var(--st-type-label-ls); text-transform: uppercase;
+                      color: var(--st-text-secondary); }
+.st-panel__section + .st-panel__section { margin-top: var(--st-space-05);
+                                          padding-top: var(--st-space-05);
+                                          border-top: 1px solid var(--st-border-subtle-01); }
+/* Anchored to the bottom so the primary action does not move as the body grows. */
+.st-panel__foot { flex: none; padding: var(--st-space-05);
+                  background: var(--st-layer-01);
+                  border-top: 1px solid var(--st-border-subtle-01); }
+/* Below the lg breakpoint the panel becomes a full-width sheet over the list,
+   because 320px of a 1024px screen is not a pane, it is a column that has eaten
+   the content. It covers the list here, which is a real loss -- the dismiss
+   control is what makes it survivable, and it is why the control is required. */
+/* The sheet takes `grid-area: main` -- the SAME cell as `.st-shell__main` -- so
+   the two stack and the sheet covers exactly the list and nothing else. The
+   first construction used `position: fixed` with `inset: var(--st-shell-header)`,
+   which silently assumes the shell begins at the top of the viewport. It does
+   not on any page with something above it, and the sheet lands in the wrong
+   place. Grid stacking has no such assumption. Header, rail and status band stay
+   reachable, which is what "a sheet over the LIST" has to mean -- a sheet over
+   the whole product with no scrim is a modal that forgot to say so. */
+@media (max-width: 1055px) {
+  .st-shell:has(> .st-shell__panel[data-open="true"]) {
+            grid-template-columns: var(--st-shell-rail) 1fr;
+            grid-template-areas: "header header" "rail main"; }
+  .st-shell--norail:has(> .st-shell__panel[data-open="true"]) {
+            grid-template-columns: 1fr; grid-template-areas: "header" "main"; }
+  .st-shell:has(> .st-statusband):has(> .st-shell__panel[data-open="true"]) {
+            grid-template-areas: "header header" "band band" "rail main"; }
+  .st-shell--norail:has(> .st-statusband):has(> .st-shell__panel[data-open="true"]) {
+            grid-template-areas: "header" "band" "main"; }
+  .st-shell__panel[data-open="true"] { grid-area: main; z-index: 45;
+                                       align-self: stretch; position: sticky;
+                                       height: calc(100vh - var(--st-shell-offset, 0px) - var(--st-shell-header));
+                                       justify-self: end; width: min(100%, 28rem);
+                                       border-inline-start: 1px solid var(--st-border-strong-01);
+                                       box-shadow: var(--st-elevation-01); }
+}
+
+/* ==========================================================================
+   Lineage -- a directed dependency walk
+
+   [brief 6 - proposal CP-01 - 2026-08-23] Show what feeds a thing and what it
+   feeds, in order, N steps out, with the volume beyond the horizon stated.
+
+   Why nothing here already served, named rather than asserted. `.st-disclose`
+   above expresses CONTAINMENT: it can hold a list of neighbours but cannot say
+   how far away any of them is, and nesting three deep loses breadth. `.st-table`
+   keeps direction as a column and loses DISTANCE, so it answers "what touches
+   this" and not "what does a change here reach". `.st-steps` is directed but is
+   a fixed sequence with a known end, where a walk branches, fans out unevenly
+   and has no end -- only a horizon. Three near-fits failing on three different
+   axes is what a real gap looks like.
+
+   The workaround that made this urgent: two disclosures of direct neighbours
+   labelled "2 elements - 118 beyond 3 hops". The beyond-count was present as
+   TEXT with no hops behind it, so it passed every review that scanned for the
+   requirement's vocabulary. It stood eighteen days. See the governing rule in
+   PATTERNS.md -- a staged view must state what it staged, in the component.
+
+   Distance is the organising principle, not an inference from indentation
+   depth. Each hop is a real <section> with a real heading, so a screen-reader
+   user gets "Hop 2, 7 items" as a landmark; the nodes are a <ul>, so the count
+   is announced; expansion is a <button>, so it is keyboard-operable. That is
+   also the argument against the node-link canvas this category reaches for
+   first: a canvas has no linear reading order, cannot be pasted into a message
+   and cannot be cited inside a chat answer. Legitimate second view, poor only
+   view.
+
+   DECLARED ABSENCE reuses the expression the system already had. `.st-empty`
+   states a hole with `1px dashed border-strong-01`, and `.st-empty--error`
+   separates failure by going SOLID in `support-error`. A restricted node and
+   the horizon band are both stated holes, so they wear the dashed edge and are
+   structurally incapable of reading as an error. They share it with each other
+   because they are the same semantic, which is what the shared-expression rule
+   permits -- it forbids two DIFFERENT patterns wearing one costume.
+
+   No new token, no new colour, no new value. Nothing here goes near the role
+   wheel, so `check_role_separation()` is untouched by construction.
+   ========================================================================== */
+.st-lineage { display: flex; flex-direction: column; position: relative; }
+/* The origin is the one element the whole walk is relative to, so it never
+   scrolls away. It sticks to whichever ancestor scrolls: constrain the height
+   here and it sticks within the walk, leave it and it sticks to the page. */
+.st-lineage__origin { position: sticky; top: 0; z-index: 1;
+                      display: flex; flex-wrap: wrap; align-items: center;
+                      gap: var(--st-space-03);
+                      padding: var(--st-space-04) var(--st-space-05);
+                      background: var(--st-layer-01);
+                      border: 1px solid var(--st-border-subtle-00);
+                      border-radius: var(--st-radius-lg);
+                      margin-bottom: var(--st-space-04); }
+
+/* One distance band. The heading is not decoration -- it is how distance is
+   announced to anyone not reading indentation. */
+.st-lineage__hop { padding-block: var(--st-space-04);
+                   border-top: 1px solid var(--st-border-subtle-01); }
+.st-lineage__hop:first-of-type { border-top: 0; padding-top: 0; }
+.st-lineage__hoplabel { display: flex; align-items: baseline; gap: var(--st-space-02);
+                        margin: 0 0 var(--st-space-02);
+                        font: var(--st-type-label-weight) var(--st-type-label-size)/var(--st-type-label-lh) var(--st-font-sans);
+                        letter-spacing: var(--st-type-label-ls); text-transform: uppercase;
+                        color: var(--st-text-secondary); }
+/* Direction is a property of the WALK, not of each node, so the cue sits on the
+   band once rather than repeating on every row. The caret is a second channel
+   and never the only one: `__origin` must state the direction in words. */
+.st-lineage__hoplabel::before { content: ""; flex: none; align-self: center;
+                                width: 0; height: 0;
+                                border-top: 3px solid transparent;
+                                border-bottom: 3px solid transparent;
+                                border-left: 4px solid var(--st-icon-secondary);
+                                transform: var(--st-lineage-dir, none); }
+.st-lineage--upstream { --st-lineage-dir: scaleX(-1); }
+.st-lineage--downstream { --st-lineage-dir: none; }
+/* The count is part of the band, not helper text beside it. */
+/* The band's gap is tight so the direction caret reads as part of the label. The
+   count needs its own air or "Hop 1" and "2 items" run together into "HOP 12 ITEMS",
+   which is how a count stops being readable as a count. */
+.st-lineage__hopcount { margin-inline-start: var(--st-space-03);
+                        font-variant-numeric: tabular-nums; color: var(--st-text-helper);
+                        text-transform: none; letter-spacing: 0;
+                        font-size: var(--st-type-helper-size); font-weight: 400; }
+
+.st-lineage__nodes { list-style: none; margin: 0; padding: 0;
+                     display: flex; flex-direction: column; }
+.st-lineage__node { display: flex; flex-wrap: wrap; align-items: baseline;
+                    gap: var(--st-space-03);
+                    padding: var(--st-space-02) var(--st-space-04);
+                    margin-inline-start: var(--st-space-05);
+                    border-radius: var(--st-radius-sm);
+                    font-size: var(--st-type-body-sm-size); }
+.st-lineage__node:hover { background: var(--st-layer-hover-01); }
+/* `.st-code` sets font and never colour or decoration, so `a.st-code` kept the UA
+   underline and the walk carried a SECOND link expression beside `.st-link`'s. Match
+   `.st-link` exactly. Noted as a system-wide gap: `a.st-code` has no defined
+   expression anywhere. First occurrence, so it gets a local fix and a finding. */
+.st-lineage__node a { color: var(--st-link-primary); text-decoration: none; }
+.st-lineage__node a:hover { text-decoration: underline; text-underline-offset: 2px; }
+.st-lineage__node a:focus-visible { outline: 2px solid var(--st-focus); outline-offset: 1px;
+                                    border-radius: var(--st-radius-xs); }
+/* The description is what makes the chain MEANINGFUL rather than structural, so
+   it is never truncated. Above md it shares the row; below it takes its own line
+   and wraps. `.st-truncate` on this element is a defect, not a density choice. */
+.st-lineage__desc { color: var(--st-text-secondary); min-width: 0;
+                    flex: 1 1 100%; overflow-wrap: anywhere; }
+@media (min-width: 672px) { .st-lineage__desc { flex: 1 1 auto; } }
+
+.st-lineage__node-toggle { flex: none; display: inline-flex; align-items: center;
+                           justify-content: center; padding: 0; border: 0;
+                           background: none; cursor: pointer;
+                           color: var(--st-icon-secondary); }
+.st-lineage__node-toggle svg { width: 14px; height: 14px;
+                               transition: transform var(--st-duration-fast) var(--st-ease-standard); }
+.st-lineage__node-toggle:focus-visible { outline: 2px solid var(--st-focus); outline-offset: 2px;
+                                         border-radius: var(--st-radius-xs); }
+.st-lineage__node--open > .st-lineage__node-toggle svg { transform: rotate(90deg); }
+/* Children reveal UNDER the node. The walk above and below stays exactly where
+   it was, because opening one node must not cost you your place in the walk. */
+.st-lineage__nest { flex: 1 1 100%; margin: var(--st-space-03) 0 var(--st-space-02);
+                    padding-inline-start: var(--st-space-05);
+                    border-inline-start: 1px solid var(--st-border-subtle-01); }
+
+/* A declared hole. The reference stays visible and the content is withheld, and
+   the dashed border-strong edge is the same expression `.st-empty` uses -- which
+   is precisely how it stays distinguishable from an error, since errors go SOLID
+   in support-error. The words must say it too; the edge is the second channel. */
+.st-lineage__node--restricted { border: 1px dashed var(--st-border-strong-01);
+                                border-radius: var(--st-radius-sm); }
+.st-lineage__node--restricted:hover { background: none; }
+.st-lineage__node--restricted .st-lineage__desc { color: var(--st-text-helper); }
+
+/* Within-band overflow. A band shows its first few and STATES the rest; it never
+   silently truncates, and the same row carries an extreme fan-out cut. */
+.st-lineage__more { margin-top: var(--st-space-03);
+                    margin-inline-start: var(--st-space-05); }
+/* The horizon is a band in its own right, not a footnote, because the chain
+   always exists and only the view is staged. */
+.st-lineage__horizon { margin-top: var(--st-space-04);
+                       margin-inline-start: var(--st-space-05);
+                       padding: var(--st-space-04);
+                       border: 1px dashed var(--st-border-strong-01);
+                       border-radius: var(--st-radius-sm);
+                       display: flex; flex-direction: column; align-items: flex-start;
+                       gap: var(--st-space-03); }
+/* The horizon has no direction of its own -- it is where direction runs out. */
+.st-lineage__horizon .st-lineage__hoplabel { margin: 0; }
+.st-lineage__horizon .st-lineage__hoplabel::before { content: none; }
+
+/* --------------------------------------------------------------------------
+   Lineage: the PATH variant
+
+   Added 6 Sep 2026, adopted from an engagement proposal (CP-02b). A VARIANT and not a
+   new component, because it is the same walk over the same graph -- only the question
+   changes.
+
+   The hop bands above answer "what is one step away, and how far does this reach". This
+   answers "how does this number get MADE": one route, end to end, with the formula at
+   every step and how the value enters the next one. A dependency trace says what is
+   connected; a calculation trace says how the value gets through, and that is what
+   somebody needs in front of them before they change a formula.
+
+   Why not `.st-steps`, which is the nearest fit and was tested against this. A stepper
+   and a route have the same shape and incompatible meanings: a stepper encodes YOUR
+   PROGRESS THROUGH A TASK -- done, current, unreachable, failed -- and a route encodes
+   A VALUE'S PASSAGE THROUGH FORMULAS, where every node is equally "done" and none is
+   current. Wearing the stepper would inherit revisit-and-progress semantics that are
+   false here, which is the same argument that kept steps and tabs apart.
+
+   Both ends are marked because both are findings. Downstream a route ends at an output
+   nothing consumes; upstream it ends at an input nothing feeds. Neither is an empty
+   list -- each is where the chain genuinely stops.
+   -------------------------------------------------------------------------- */
+.st-lineage--path .st-lineage__nodes { padding-inline-start: 0; }
+.st-lineage__step { position: relative;
+                    padding: var(--st-space-04) 0 var(--st-space-04) var(--st-space-06); }
+/* The spine is drawn on the step rather than the list, so it can stop half way at each
+   end -- a line running past the first and last node implies a chain that continues,
+   which is the one thing a terminal must not say. */
+.st-lineage__step::before { content: ""; position: absolute; inset-inline-start: 5px;
+                            top: 0; bottom: 0; width: 2px;
+                            background: var(--st-border-subtle-01); }
+.st-lineage__step:first-child::before { top: 50%; }
+.st-lineage__step:last-child::before  { bottom: 50%; }
+.st-lineage__step::after { content: ""; position: absolute; inset-inline-start: 0;
+                           top: calc(var(--st-space-04) + 0.4em);
+                           width: 12px; height: 12px; border-radius: var(--st-radius-full);
+                           background: var(--st-layer-02);
+                           border: 2px solid var(--st-border-strong-01); }
+/* Where the value enters the next formula. Named, because "connected to" and "summed
+   into" are different facts and only one of them explains a number. */
+.st-lineage__via { display: block; margin-inline-start: var(--st-space-06);
+                   font-size: var(--st-type-helper-size); color: var(--st-text-helper); }
+/* The formula the value passes through, verbatim. */
+.st-lineage__rule { display: block; margin-top: var(--st-space-02);
+                    font: var(--st-type-code-size)/var(--st-type-code-lh) var(--st-font-mono);
+                    color: var(--st-text-secondary);
+                    white-space: pre-wrap; overflow-wrap: anywhere; }
+/* The end of the road in either direction. The marker is a second channel only -- the
+   step must say "final output" or "source" in words as well. */
+.st-lineage__step--terminal::after { background: var(--st-border-interactive);
+                                     border-color: var(--st-border-interactive); }
+.st-lineage__step--origin::after { background: var(--st-text-primary);
+                                   border-color: var(--st-text-primary); }
+
+/* ==========================================================================
+   Steps — `navigation-set`, stepper form
+
+   Extracted from Carbon's ProgressIndicator. States map 1:1 (complete, current,
+   incomplete, invalid), with one recorded divergence: `--failed` is not optional.
+   Sequences fail, and a stepper with no failure state forces a fallback that
+   undoes the component.
+
+   Built separately from `.st-tablist` on purpose. Tabs are peers in no order that
+   you may revisit freely; steps have an order, a current position, and things you
+   cannot yet reach. A modifier would inherit the wrong revisit semantics.
+   ========================================================================== */
+/* [encode 2026-08-20, ledger E-13] Border-top state coding replaces the boxed
+   stepper: each step is a 2px leading edge + text, state carried by edge colour
+   AND weight (survives greyscale). The number circles retire; position is still
+   stated in text via __pos, which is the accessible channel the circles never
+   were. __num is display:none rather than deleted so existing markup renders
+   clean while it is migrated out. --failed remains non-optional. */
+.st-steps { display: flex; gap: var(--st-space-02); list-style: none;
+            margin: 0; padding: 0; }
+.st-step { flex: 1; display: block; padding: var(--st-space-03) var(--st-space-02) 0 var(--st-space-03);
+           border-top: 2px solid var(--st-border-subtle-01);
+           font-size: var(--st-type-body-sm-size); color: var(--st-text-secondary);
+           min-width: 0; background: none; }
+.st-step__num { display: none; }
+.st-step__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+/* Position stated in text, not implied by the drawing. Not decoration. */
+.st-step__pos { display: block; font-size: var(--st-type-helper-size); color: var(--st-text-helper); }
+.st-step--done { border-top-color: var(--st-border-inverse); color: var(--st-text-primary); }
+/* --current carries colour AND weight, so it survives greyscale. */
+.st-step--current { border-top-color: var(--st-border-interactive); color: var(--st-text-primary); }
+.st-step--current .st-step__text { font-weight: 600; }
+.st-step--todo { color: var(--st-text-secondary); }
+.st-step--failed { border-top-color: var(--st-support-error); }
+.st-step--failed .st-step__text { color: var(--st-text-error); font-weight: 600; }
+
+/* ==========================================================================
+   Stat — `summary-tile`
+
+   Added. Carbon has no metric component; only the meter maps to anything
+   (Progress bar). A single number a person reads before anything else, with the
+   one word that says what it counts. Used in rows of two to four.
+
+   [encode 2026-08-20, ledger E-14] REVERSAL: the stat IS a card now. The
+   original "no border of its own" rule assumed a tonal canvas doing the
+   separating; on the locked white canvas a bare figure floats. The stat card is
+   the display moment of the language: hairline card, caps label, 28/600 figure.
+   The row-of-four-panels risk the old rule guarded against is handled by the
+   composition layer's gap hierarchy instead.
+   ========================================================================== */
+.st-stat { display: flex; flex-direction: column; gap: var(--st-space-02); min-width: 0;
+           padding: var(--st-space-05); background: var(--st-layer-02);
+           border: 1px solid var(--st-border-subtle-00); border-radius: var(--st-radius-xl);
+           box-shadow: var(--st-elevation-01); }
+.st-stat__figure { font: var(--st-type-display-weight) var(--st-type-display-size)/1.1 var(--st-font-sans);
+                   letter-spacing: var(--st-type-display-ls); font-variant-numeric: tabular-nums;
+                   color: var(--st-text-primary); display: flex; align-items: baseline; gap: var(--st-space-03); }
+/* The label is REQUIRED and is not a tooltip. A bare figure is not information. */
+.st-stat__label { font: var(--st-type-label-weight) var(--st-type-label-size)/var(--st-type-label-lh) var(--st-font-sans);
+                  letter-spacing: var(--st-type-label-ls); text-transform: uppercase;
+                  color: var(--st-text-secondary); }
+.st-stat--lead .st-stat__label { color: var(--st-text-primary); font-weight: 600; }
+/* Direction must survive greyscale: the sign is prepended in CSS content, so it
+   is never carried by colour alone. On a green brand the up-is-green convention
+   would otherwise collide with the primary action colour. */
+.st-stat__delta { font-size: var(--st-type-label-size); font-weight: 600;
+                  padding: 1px var(--st-space-03); border-radius: var(--st-radius-full);
+                  white-space: nowrap; font-variant-numeric: tabular-nums; }
+.st-stat__delta--up { background: var(--st-support-success-subtle); color: var(--st-support-success); }
+.st-stat__delta--up::before { content: "+ "; }
+.st-stat__delta--down { background: var(--st-support-error-subtle); color: var(--st-text-error); }
+.st-stat__delta--down::before { content: "\2212 "; }
+/* [6 Sep 2026] The meter was only ever a PART of the stat, and one engagement put it
+   outside a stat three times -- a queue position, a bulk-apply progress row, a budget
+   spend bar. Third occurrence, so it becomes an element in its own right, and the stat's
+   part JOINS the selector rather than repeating the declarations. That is the same rule
+   `.st-visually-hidden` follows, and it is what stops the two drifting apart.
+   The stat keeps ONLY the top margin, because that margin is about sitting under a
+   figure and means nothing standalone.
+   A standalone meter carries no label of its own, so it must either sit inside a
+   `role="progressbar"` with aria-valuenow/min/max, or be named by adjacent text. A bare
+   bar is a picture of a number, and a picture of a number is not information. */
+.st-meter, .st-stat__meter { height: 6px; border-radius: var(--st-radius-full);
+                  background: var(--st-layer-accent-01); overflow: hidden; }
+.st-stat__meter { margin-top: var(--st-space-03); }
+/* border-interactive, not background-brand: the brand fill drops to 2.13:1 on the
+   track in dark theme. This is the same hue family and clears 3:1 in both. */
+.st-meter > i, .st-stat__meter > i { display: block; height: 100%; background: var(--st-border-interactive);
+                      transition: width var(--st-duration-slow) var(--st-ease-standard); }
+.st-meter--warn > i, .st-stat__meter--warn > i { background: var(--st-support-warning); }
+/* A missing figure must never look like a zero. */
+.st-stat--unavailable .st-stat__figure { color: var(--st-text-secondary); font-weight: 400;
+                                         font-size: var(--st-type-heading-md-size); font-style: italic; }
+
+/* ==========================================================================
+   Comparison — tabular
+
+   Added. Cell modifiers rather than a component, deliberately: the surrounding
+   `.st-table` already carries sorting, zebra striping and row height, and a
+   component would have to re-implement all three to sit inside it.
+   ========================================================================== */
+.st-cmp-before { color: var(--st-text-secondary); font-variant-numeric: tabular-nums; }
+.st-cmp-after  { font-weight: 600; font-variant-numeric: tabular-nums; }
+/* One delta treatment across the system, not two. */
+.st-cmp-after .st-stat__delta { margin-inline-start: var(--st-space-03); }
+/* An unchanged row RENDERS. A proposal that touches nothing must be able to say
+   so; hiding it makes "no change" and "not included" look identical. */
+.st-cmp-same { color: var(--st-text-secondary); font-style: italic; }
+/* A live before-value can fail to fetch, and a blank cell reads as zero. */
+.st-cmp-unread { color: var(--st-text-secondary); }
+.st-cmp-unread::after { content: " \2014 could not be read"; font-size: var(--st-type-helper-size); }
+
+/* ==========================================================================
+   Comparison — prose
+
+   Added. Two whole versions of the same content where a person must pick one.
+   The attribution line is what makes it a comparison rather than two cards:
+   who wrote it, when, and against which version.
+   ========================================================================== */
+.st-compare { display: grid; grid-template-columns: 1fr 1fr; gap: var(--st-space-05); align-items: stretch; }
+@media (max-width: 820px) { .st-compare { grid-template-columns: 1fr; } }
+.st-compare__panel { display: flex; flex-direction: column; padding: var(--st-space-05);
+                     background: var(--st-layer-02); border: 1px solid var(--st-border-subtle-01);
+                     border-radius: var(--st-radius-lg); }
+/* The winning panel carries a TEXT TAG as well as a border. A border alone is a
+   colour-only signal, and on a green brand it is the same green as success. */
+.st-compare__panel--winning { border-color: var(--st-border-interactive);
+                              box-shadow: inset 3px 0 0 var(--st-border-interactive); }
+.st-compare__label { display: flex; align-items: center; gap: var(--st-space-03); font-weight: 600;
+                     margin-bottom: var(--st-space-03); }
+/* flex:1 so both panels end level regardless of text length. Ragged bottoms make
+   two panels read as unrelated. */
+.st-compare__body { flex: 1; margin: 0; }
+.st-compare__attrib { margin: var(--st-space-05) 0 0; padding-top: var(--st-space-04);
+                      border-top: 1px solid var(--st-border-subtle-01);
+                      font-size: var(--st-type-helper-size); color: var(--st-text-secondary); }
+/* A stated absence -- "the other person deleted this" -- not a blank. You cannot
+   compare against an empty panel. */
+.st-compare__panel--absent .st-compare__body { display: flex; align-items: center; justify-content: center;
+                                               text-align: center; min-height: 64px;
+                                               border: 1px dashed var(--st-border-strong-01);
+                                               border-radius: var(--st-radius-sm);
+                                               color: var(--st-text-secondary);
+                                               font-size: var(--st-type-helper-size); padding: var(--st-space-05); }
+
+
+/* ==========================================================================
+   The default anchor
+
+   [brief 6, 2026-08-23] There was no base `a` rule in this file. The comment
+   below asserted that an unstyled <a> takes `--st-link-primary`; E-19's comment
+   thirty lines further down recorded the opposite, that a bare content link
+   "took the UA default, which fails contrast in dark theme". Both could not be
+   true. E-19 was the correct one: a bare <a> rendered `#0000EE`, the only
+   saturated blue anywhere in the system.
+
+   E-19 answered it with a class, which fixes the REMEMBERED case and leaves the
+   unremembered one exactly as it was. This rule is the other half, and it is
+   what makes the comment below true rather than aspirational.
+
+   Colour is set on every anchor: every classed anchor component in the system
+   already sets its own colour, so each overrides this on specificity. The
+   underline, hover and focus ring are scoped to `a:not([class])`, because
+   `.st-btn` sets no text-decoration and an `a.st-btn` must not grow one.
+   ========================================================================== */
+a { color: var(--st-link-primary); }
+a:not([class]) { text-decoration: underline; text-underline-offset: 2px; }
+a:not([class]):hover { color: var(--st-link-hover); }
+a:not([class]):focus-visible { outline: 2px solid var(--st-focus); outline-offset: 1px;
+                               border-radius: var(--st-radius-xs); }
+
+/* [6 Sep 2026] `.st-code` sets a font and never a colour or a decoration, so an anchor
+   wearing it kept the UA underline and the system carried a SECOND link expression
+   beside `.st-link`'s. It was fixed inside `.st-lineage` on 23 August and recorded there
+   as occurrence one; an engagement has since used `a.st-code` in table cells, in
+   breadcrumbs and in answer text, which makes it four. Four is a rule.
+   It lives HERE, in the default-anchor section, and not in Content link thirty lines
+   below -- because "Links inside semantic surfaces" comes between the two, carries equal
+   specificity, and must win. Written below it, an identifier link inside a BLOCKED
+   status would render in the action hue: the go colour inside a stop message. */
+a.st-code { color: var(--st-link-primary); text-decoration: none; }
+a.st-code:hover { text-decoration: underline; text-underline-offset: 2px; }
+a.st-code:focus-visible { outline: 2px solid var(--st-focus); outline-offset: 1px;
+                          border-radius: var(--st-radius-xs); }
+
+/* ==========================================================================
+   Links inside semantic surfaces
+
+   Third occurrence of one bug, so it gets a rule rather than a third patch.
+
+   An unstyled <a> takes `--st-link-primary` (as of the rule above, which is
+   what made this sentence true). Inside a surface that already
+   carries its own semantic colour that is wrong in a way that is worse than
+   ugly: on a green-primary brand, a link inside a BLOCKED status renders in the
+   action hue, so a failure reads as an action. That is the role collision the
+   token-level fix removed, reappearing at composition level.
+
+   The rule: inside any surface whose colour already means something, a link
+   inherits that colour and carries an underline instead. The underline is what
+   makes it still read as a link once the colour is spent.
+
+   Reported from the field on `.st-statusband`, and generalised here because the
+   same defect was latent in every other surface on this list. `.st-note` and
+   `.st-toast` had it and nobody had put a link in one yet.
+   ========================================================================== */
+.st-statusband a,
+.st-note a,
+.st-toast a,
+.st-empty a,
+.st-step__text a,
+.st-tag a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.st-statusband a:hover,
+.st-note a:hover,
+.st-toast a:hover,
+.st-empty a:hover { text-decoration-thickness: 2px; }
+
+/* ==========================================================================
+   Content link
+   [encode 2026-08-20, ledger E-19] Added. The system styled links inside
+   semantic surfaces and links inside components, but a bare content link had
+   no class — so it took the UA default, which fails contrast in dark theme
+   (found by axe on the acceptance render, the audit working as designed).
+   ========================================================================== */
+.st-link { color: var(--st-link-primary); font-weight: 600; text-decoration: none; }
+.st-link:hover { color: var(--st-link-hover); text-decoration: underline; text-underline-offset: 2px; }
+.st-link:focus-visible { outline: 2px solid var(--st-focus); outline-offset: 1px; border-radius: var(--st-radius-xs); }
+
+/* ==========================================================================
+   Key code — a machine-readable string a person must read aloud or transcribe
+
+   Added. Pairing codes, one-time passcodes, short reference IDs. The requirement
+   is not decorative: it must survive being read down a phone line, so the glyphs
+   have to be unambiguous and the grouping has to be visible.
+   ========================================================================== */
+.st-keycode { font: var(--st-type-display-weight) var(--st-type-display-size)/1.1 var(--st-font-mono);
+              letter-spacing: 0.12em; font-variant-numeric: tabular-nums slashed-zero;
+              color: var(--st-text-primary); display: inline-block; }
+.st-keycode--sm { font-size: var(--st-type-heading-md-size); }
+
+/* ==========================================================================
+   Code block — machine text, as a block
+
+   Added 6 Sep 2026, adopted from an engagement proposal (CP-04). Carbon has no
+   equivalent; this is Strata's own.
+
+   The system had `.st-code`, and it is an INLINE type utility: a font, a size, a
+   letter-spacing, nothing else. It is right for an identifier in a sentence or in a
+   cell. It is wrong for a formula on its own line or a payload of several, because a
+   block of machine text needs a SURFACE, a gutter and a scroll of its own before it is
+   readable -- and without them every product that shows one reaches for an inline
+   style, which is exactly what happened.
+
+   Measured on the engagement that raised it: a six-line agent payload rendered as a
+   bare <pre> with an inline white-space rule was the least readable thing in the
+   artefact, and the reason was that it looked like prose in a monospace font.
+
+   A long line scrolls INSIDE the block and never on the page. That is the same rule
+   `.st-table-wrap` now follows, and for the same reason: a container that cannot hold
+   its content says so rather than breaking the page around it.
+   ========================================================================== */
+.st-codeblock {
+  display: block; margin: 0;
+  padding: var(--st-space-04) var(--st-space-05);
+  background: var(--st-layer-accent-01);
+  border: 1px solid var(--st-border-subtle-01);
+  border-radius: var(--st-radius-md);
+  font: var(--st-type-code-weight) var(--st-type-code-size)/1.6 var(--st-font-mono);
+  letter-spacing: var(--st-type-code-ls);
+  color: var(--st-text-primary);
+  overflow-x: auto;
+  white-space: pre;
+  tab-size: 2;
+}
+/* A caption, because machine text with no label is a puzzle: the reader has to work out
+   what they are looking at before they can start reading it. */
+.st-codeblock__head {
+  display: flex; align-items: baseline; gap: var(--st-space-03);
+  margin-bottom: var(--st-space-02);
+  font: var(--st-type-label-weight) var(--st-type-label-size)/var(--st-type-label-lh) var(--st-font-sans);
+  letter-spacing: var(--st-type-label-ls); text-transform: uppercase;
+  color: var(--st-text-helper);
+}
+.st-codeblock__meta { margin-inline-start: auto; text-transform: none; letter-spacing: 0;
+                      font-weight: 400; font-variant-numeric: tabular-nums; }
+/* Keys inside a payload: ONE weight of separation and no colour. The proposal arrived
+   setting a colour here and its own comment argued against doing so -- a syntax palette
+   inside a product that also uses colour for meaning is two vocabularies fighting over
+   the same channel. Corrected at adoption; weight carries it, and it introduces no
+   contrast pair the audit would have to learn. */
+.st-codeblock b { font-weight: 600; }
+/* One line on its own -- a formula in a field. Same surface, less furniture, and it
+   wraps rather than scrolls because a single expression has nowhere to scroll to. */
+.st-codeblock--line { padding: var(--st-space-03) var(--st-space-04); white-space: pre-wrap;
+                      overflow-wrap: anywhere; }
+
+/* ==========================================================================
+   SUBJECT STATE — app.subject-state
+
+   The tenth region, added after a field engagement demonstrated that the nine
+   did not cover it. Its three regions -- how stale the extracted copy is,
+   whether writing is barred, whether the last write verified -- are the state of
+   the THING BEING WORKED ON. Not the work (`app.work-waiting`), not the worker
+   (`app.account`), not navigation (`app.utility`).
+
+   It passed the spec's own test -- derivable from artefacts the pipeline already
+   produces -- while having no slot, which is a hole in the region set rather than
+   a misuse of it.
+
+   It belongs in the frame, not in content: if a fact must be true on every screen
+   and changes what a person should TRUST, a per-screen home is the wrong home.
+
+   Renders only when the product has state that persists across screens and
+   changes how the content should be read. Most products have none.
+   ========================================================================== */
+/* layer-01, not layer-accent-01. The accent surface is darker and drops warning
+   text to 3.88:1 -- caught by the audit, not by looking at it. layer-01 also
+   matches the header, which is correct: this band is frame, not content. */
+.st-statusband { grid-area: band; display: flex; align-items: center; flex-wrap: wrap;
+                 gap: var(--st-space-05); padding: var(--st-space-03) var(--st-space-05);
+                 background: var(--st-layer-01); color: var(--st-text-primary);
+                 border-bottom: 1px solid var(--st-border-subtle-01);
+                 font-size: var(--st-type-body-sm-size); }
+.st-statusband__item { display: inline-flex; align-items: center; gap: var(--st-space-03); }
+/* Never colour alone. The dot is an affordance; the words carry the meaning. */
+.st-statusband__dot { width: 8px; height: 8px; border-radius: var(--st-radius-full);
+                      background: var(--st-support-success); flex: none; }
+.st-statusband__item--stale .st-statusband__dot { background: var(--st-support-warning); }
+.st-statusband__item--blocked .st-statusband__dot { background: var(--st-support-error); }
+.st-statusband__item--stale { color: var(--st-support-warning); font-weight: 600; }
+.st-statusband__item--blocked { color: var(--st-text-error); font-weight: 600; }
+.st-shell:has(> .st-statusband) { grid-template-rows: var(--st-shell-header) auto 1fr;
+                                  grid-template-areas: "header header" "band band" "rail main"; }
+.st-shell--norail:has(> .st-statusband) { grid-template-areas: "header" "band" "main"; }
+.st-shell:has(> .st-statusband):has(> .st-shell__panel[data-open="true"]) {
+            grid-template-areas: "header header header" "band band band" "rail main panel"; }
+.st-shell--norail:has(> .st-statusband):has(> .st-shell__panel[data-open="true"]) {
+            grid-template-areas: "header header" "band band" "main panel"; }
+
+/* ==========================================================================
+   Empty state
+
+   Added. Every flow is required to have at least one non-success terminal, and
+   the system had no component for the surface those terminals land on -- so each
+   product invented one. A structural gap, not a utility.
+   ========================================================================== */
+.st-empty { display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: var(--st-space-04); padding: var(--st-space-09) var(--st-space-05);
+            text-align: center; border: 1px dashed var(--st-border-strong-01);
+            border-radius: var(--st-radius-xl); color: var(--st-text-secondary); }
+.st-empty__title { font: var(--st-type-heading-md-weight) var(--st-type-heading-md-size)/var(--st-type-heading-md-lh) var(--st-font-sans);
+                   color: var(--st-text-primary); margin: 0; }
+/* An empty state says what is missing AND what to do. One without an action is a
+   dead end wearing a friendly face. */
+.st-empty__body { margin: 0; max-width: 48ch; font-size: var(--st-type-body-sm-size); }
+.st-empty--error { border-style: solid; border-color: var(--st-support-error); }
+
+/* ==========================================================================
+   Key-value list
+
+   Added. `record-detail` resolved to `.st-tile`, which is a container -- it never
+   said how the fields inside it are laid out, so every product laid them out
+   differently.
+   ========================================================================== */
+.st-kv { display: grid; grid-template-columns: max-content 1fr; gap: var(--st-space-03) var(--st-space-05);
+         margin: 0; align-items: baseline; }
+/* [encode E-15] kv keys wear the caps label — this is also the separating cue
+   that tells a record-detail card apart from a collection card (fork rule R2). */
+.st-kv dt { color: var(--st-text-secondary);
+            font: var(--st-type-label-weight) var(--st-type-label-size)/var(--st-type-label-lh) var(--st-font-sans);
+            letter-spacing: var(--st-type-label-ls); text-transform: uppercase; }
+.st-kv dd { margin: 0; font-size: var(--st-type-body-sm-size); }
+@media (max-width: 480px) { .st-kv { grid-template-columns: 1fr; gap: var(--st-space-01) 0; }
+                            .st-kv dd { margin-bottom: var(--st-space-03); } }
+
+/* ==========================================================================
+   Table: sortable header and navigating row
+
+   Both added after field use. `.st-table thead th[aria-sort]` styled the CELL and
+   left the button inside it unprovided, so native <button> chrome showed through.
+   And `.st-table tbody tr:hover` implied an interactivity the row never declared.
+   ========================================================================== */
+.st-table__sort { display: inline-flex; align-items: center; gap: var(--st-space-02);
+                  border: 0; background: none; padding: 0; margin: 0; cursor: pointer;
+                  font: inherit; color: inherit; letter-spacing: inherit; }
+.st-table__sort:focus-visible { outline: 2px solid var(--st-focus); outline-offset: 2px; }
+.st-table__sortarrow { width: 12px; height: 12px; flex: none; color: var(--st-icon-secondary);
+                       visibility: hidden; }
+.st-table thead th[aria-sort] .st-table__sortarrow { visibility: visible; color: var(--st-icon-primary); }
+.st-table thead th[aria-sort="descending"] .st-table__sortarrow { transform: rotate(180deg); }
+.st-table thead th:hover .st-table__sortarrow { visibility: visible; }
+
+/* A row that navigates. The cursor is not sufficient on its own -- the row MUST
+   contain a real link or the whole thing is unreachable by keyboard and invisible
+   to a screen reader. This class styles that pattern; it does not create it. */
+.st-table tbody tr.st-table__rowlink { cursor: pointer; }
+.st-table tbody tr.st-table__rowlink:focus-within { outline: 2px solid var(--st-focus);
+                                                    outline-offset: -2px; }
+/* The ROW is the affordance, so the link inside it must not also look like one --
+   an unstyled <a> here takes the browser default blue and fails contrast on a
+   zebra row in dark theme. Caught by axe on the reference page, not by eye. */
+.st-table tbody tr.st-table__rowlink a { color: inherit; text-decoration: none; }
+.st-table tbody tr.st-table__rowlink a::after { content: ""; position: absolute; inset: 0; }
+.st-table tbody tr.st-table__rowlink { position: relative; }
+
+/* ==========================================================================
+   Utilities
+
+   A bounded set, and the bound is the rule: a utility may only express something
+   the token layer already contains. No new values, no new colours, nothing that
+   is a design decision in disguise. Everything here was measured in field use --
+   `.st-num` alone replaced 86 bespoke class uses.
+
+   If a utility you want is not here, that is a finding, not a licence to write it
+   locally.
+   ========================================================================== */
+/* Tabular numerals were already inside .st-stat__figure, .st-cmp-* and
+   .st-rail__meta, and there was no way to get them onto an ordinary table cell.
+   Columns of numbers that do not align are the most common way a dense product
+   stops looking like a system. */
+.st-num { font-variant-numeric: tabular-nums; }
+/* [encode, P-3] Identifiers and machine strings never wrap mid-string. */
+.st-nowrap { white-space: nowrap; }
+.st-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* [brief 6, 2026-08-23] A name that is read and not drawn. The technique existed
+   exactly once in this file, hardcoded inside `.st-shell--explorer
+   .st-waiting__label`, so a table header for a checkbox or an actions column had
+   nowhere to get one -- the third time a needed utility was found missing rather
+   than invented locally, which is the finding this section's own bound predicts.
+   The shell's use JOINS this selector rather than repeating the declarations, so
+   there is one expression of the technique and it cannot drift from itself. */
+.st-visually-hidden,
+.st-shell--explorer .st-waiting__label { position: absolute; width: 1px; height: 1px;
+                                         overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* Exactly two text-colour utilities, both mapping to existing semantic tokens.
+   Secondary emphasis inside a sentence had nowhere to go, because the twelve type
+   classes set size and weight and never colour. Not extended without evidence --
+   an open-ended colour-utility set is how a token system becomes a class soup. */
+.st-text-secondary { color: var(--st-text-secondary); }
+.st-text-helper    { color: var(--st-text-helper); }
+
+
+/* ==========================================================================
+   Icons
+
+   Construction rules from Carbon (32 grid, 2px padding, 16/20/24/32 sizes);
+   drawings authored to them, stroke-based rather than filled. See build/icons.py
+   for why extraction was declined.
+
+   Inline the sprite once per document, then <svg class="st-icon"><use
+   href="#st-i-search"/></svg>. Always aria-hidden -- an icon that carries meaning
+   alone is a defect, and every component in this system pairs one with text.
+   ========================================================================== */
+.st-icon { width: 1.25rem; height: 1.25rem; flex: none; display: inline-block;
+           vertical-align: -0.2em; color: inherit; }
+.st-icon--sm { width: 1rem; height: 1rem; }
+.st-icon--md { width: 1.25rem; height: 1.25rem; }
+.st-icon--lg { width: 1.5rem; height: 1.5rem; }
+.st-icon--xl { width: 2rem; height: 2rem; }
+/* An interactive icon needs a 44px target. Carbon states this and then ships a
+   40px field; here the button variants clear it and this class exists for the
+   bare-icon case. */
+.st-icon-btn { display: inline-grid; place-items: center; min-width: 2.75rem; min-height: 2.75rem;
+               border: 0; background: none; color: var(--st-icon-secondary);
+               border-radius: var(--st-radius-md); cursor: pointer; }
+.st-icon-btn:hover { background: var(--st-layer-hover-01); color: var(--st-icon-primary); }
+.st-icon-btn:focus-visible { outline: 2px solid var(--st-focus); outline-offset: -2px; }
+
+/* ==========================================================================
+   Loading and skeleton
+
+   Production needs the state between empty and loaded, and the system had a
+   `skeleton-background` token with nothing using it.
+
+   A skeleton is honest only if it has the SHAPE of what is coming. A generic grey
+   block that resolves into a table teaches the reader nothing and makes the wait
+   feel longer, because the layout jumps when it lands.
+   ========================================================================== */
+.st-skeleton { background: var(--st-skeleton-background); border-radius: var(--st-radius-sm);
+               position: relative; overflow: hidden; }
+.st-skeleton--text { height: 0.75em; margin-block: 0.25em; }
+.st-skeleton--line { height: 1px; }
+.st-skeleton--block { min-height: 4rem; }
+.st-skeleton--circle { border-radius: var(--st-radius-full); }
+.st-skeleton::after { content: ""; position: absolute; inset: 0;
+                      background: linear-gradient(90deg, transparent,
+                        var(--st-layer-hover-01), transparent);
+                      transform: translateX(-100%);
+                      animation: st-shimmer var(--st-duration-slower) infinite; }
+@keyframes st-shimmer { to { transform: translateX(100%); } }
+
+/* ==========================================================================
+   SHAPED SKELETONS — the undecided-content components
+   [encode 2026-08-20, ledger E-18]
+
+   Every stage renders at one construction standard, so the skeleton is a
+   load-bearing PRODUCTION component: a region whose requirement is Open renders
+   as designed-and-empty, never as invented content and never as broken. Each
+   expression has a skeleton of its shape, and each carries a REQUIRED job slot
+   — one sentence naming what this region will do once its requirement closes.
+   Never fill a skeleton whose requirement is Open.
+   ========================================================================== */
+.st-skeleton-card { display: flex; flex-direction: column; gap: var(--st-space-03);
+                    padding: var(--st-space-05); background: var(--st-layer-02);
+                    border: 1px solid var(--st-border-subtle-00); border-radius: var(--st-radius-xl);
+                    box-shadow: var(--st-elevation-01); }
+.st-skeleton-stat { display: flex; flex-direction: column; gap: var(--st-space-03);
+                    padding: var(--st-space-05); background: var(--st-layer-02);
+                    border: 1px solid var(--st-border-subtle-00); border-radius: var(--st-radius-xl);
+                    box-shadow: var(--st-elevation-01); }
+.st-skeleton-stat > .st-skeleton--text:first-child { width: 40%; }
+.st-skeleton-stat > .st-skeleton--fig { height: 2rem; width: 30%; }
+.st-skeleton-table { border: 1px solid var(--st-border-subtle-00); border-radius: var(--st-radius-xl);
+                     overflow: hidden; background: var(--st-layer-02); }
+.st-skeleton-table__head { height: var(--st-density-row); background: var(--st-layer-accent-01); }
+.st-skeleton-table__row { height: var(--st-density-row);
+                          border-top: 1px solid var(--st-border-subtle-00);
+                          display: flex; align-items: center; gap: var(--st-space-05);
+                          padding-inline: var(--st-density-pad); }
+.st-skeleton-table__row .st-skeleton--text { flex: 1; }
+/* The job slot: visible, styled, and honest. It says what the region is FOR and
+   that its content is not yet decided — in words, because greyness alone reads
+   as "loading", which is a different promise. */
+.st-skeleton__job { display: flex; align-items: baseline; gap: var(--st-space-03);
+                    color: var(--st-text-secondary); font-size: var(--st-type-body-sm-size); }
+.st-skeleton__job b { font: var(--st-type-label-weight) var(--st-type-label-size)/var(--st-type-label-lh) var(--st-font-sans);
+                      letter-spacing: var(--st-type-label-ls); text-transform: uppercase;
+                      color: var(--st-text-helper); white-space: nowrap; }
+
+/* An indeterminate wait needs a label. A spinner alone tells a person that
+   something is happening and not what, and at 10 seconds that is the difference
+   between waiting and leaving. */
+.st-loading { display: inline-flex; align-items: center; gap: var(--st-space-04);
+              color: var(--st-text-secondary); font-size: var(--st-type-body-sm-size); }
+.st-loading__spinner { width: 1.25rem; height: 1.25rem; flex: none; border-radius: 50%;
+                       border: 2px solid var(--st-border-subtle-01);
+                       border-top-color: var(--st-border-interactive);
+                       animation: st-spin var(--st-duration-slower) linear infinite; }
+@keyframes st-spin { to { transform: rotate(360deg); } }
+
+/* ==========================================================================
+   Motion patterns
+
+   The prototype level is made of these. Duration and easing tokens existed and no
+   pattern used them, so every project invented its own timings.
+
+   Four patterns, and the count is the point: a system with fifteen motions has no
+   motion language, it has fifteen decisions.
+   ========================================================================== */
+/* enter: something arrives. Short, and it moves toward where it will rest. */
+.st-enter { animation: st-enter var(--st-duration-slow) var(--st-ease-entrance) both; }
+@keyframes st-enter { from { opacity: 0; transform: translateY(4px); } }
+/* exit: something leaves. Faster than entering -- a departure that lingers reads
+   as hesitation. */
+.st-exit { animation: st-exit var(--st-duration-fast) var(--st-ease-exit) both; }
+@keyframes st-exit { to { opacity: 0; transform: translateY(-4px); } }
+/* page: a whole surface replaces another. No movement, only a cross-fade --
+   sliding a page implies a spatial relationship between screens that the flow
+   usually does not have. */
+.st-page-enter { animation: st-fade var(--st-duration-slow) var(--st-ease-standard) both; }
+@keyframes st-fade { from { opacity: 0; } }
+/* settle: a value changed in place. The only pattern that draws attention rather
+   than explaining a change of position. */
+.st-settle { animation: st-settle var(--st-duration-slower) var(--st-ease-standard) both; }
+@keyframes st-settle { 0% { background: var(--st-highlight); } 100% { background: transparent; } }
+
+/* Not a nicety. Vestibular disorders are common, the preference is a real
+   setting real people have set, and the correct response is to remove motion
+   without removing the information the motion carried -- so animations collapse
+   to their end state rather than being disabled. */
+@media (prefers-reduced-motion: reduce) {
+  .st-enter, .st-exit, .st-page-enter, .st-settle,
+  .st-skeleton::after, .st-loading__spinner {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  .st-loading__spinner { border-top-color: var(--st-border-interactive); }
+}
+
+/* ==========================================================================
+   Review chrome — NOT part of the product
+
+   A high-fidelity artefact is a production-ready SCREEN inside a review document.
+   The banner, the region codes, the assumption list, the Low-inside-High hatching
+   and any harness bar are review affordances: they belong in the file and not in
+   the product.
+
+   Everything under `.st-review` (or carrying `data-review`) is excluded from the
+   production check and deleted on build. Nothing inside `[data-product]` may be.
+   Keeping the boundary in markup rather than in a convention is what lets the
+   check be executed rather than asserted.
+   ========================================================================== */
+.st-review { background: var(--st-layer-accent-01); border: 1px dashed var(--st-border-strong-01);
+             color: var(--st-text-primary); font-size: var(--st-type-body-sm-size);
+             padding: var(--st-space-04) var(--st-space-05); }
+.st-review--bar { border-width: 0 0 1px 0; border-style: solid; }
+.st-review__label { font-weight: 600; }
+
+/* Windows High Contrast Mode / forced-colors.
+   Carbon handles prefers-contrast (solid -> dotted focus rings) but never addresses
+   forced-colors, where the OS strips every background and shadow. Anything that
+   carries meaning by fill alone -- a primary button, a selected row, a status tag,
+   a toggle track -- becomes invisible. These rules restate that meaning as a border,
+   which forced-colors preserves. */
+@media (forced-colors: active) {
+  .st-btn { border-color: ButtonText; forced-color-adjust: none;
+            background: ButtonFace; color: ButtonText; }
+  /* HCM strips fill, so all five button variants collapse to the same box. Restate
+     the hierarchy in the two channels HCM preserves: the system Highlight pair for
+     the primary action (the native OS convention for a default button), and a
+     doubled border for danger. Carbon addresses none of this. */
+  .st-btn--primary { background: Highlight; color: HighlightText; border-color: Highlight; }
+  .st-btn--danger { border-width: 2px; border-style: double; }
+  .st-btn--secondary { background: ButtonFace; color: ButtonText; }
+  .st-btn:disabled, .st-btn[aria-disabled="true"] { color: GrayText; border-color: GrayText; }
+  .st-btn:focus-visible, .st-field:focus-visible, .st-tab:focus-visible,
+  .st-day:focus-visible { outline: 2px solid Highlight; outline-offset: 1px; }
+  .st-field { border-color: ButtonText; }
+  .st-field[aria-invalid="true"] { border-style: dashed; }
+  .st-check__box, .st-radio__dot { border-color: ButtonText; }
+  .st-check:checked + .st-check__box { background: Highlight; }
+  .st-check__box svg { color: HighlightText; }
+  .st-radio:checked + .st-radio__dot::after { background: Highlight; }
+  .st-toggle__track { border: 1px solid ButtonText; }
+  .st-toggle__track::after { background: ButtonText; }
+  .st-toggle:checked + .st-toggle__track { background: Highlight; }
+  .st-toggle:checked + .st-toggle__track::after { background: HighlightText; }
+  .st-tag { border-color: ButtonText; }
+  /* The dot is decorative; HCM strips its fill. Give it a border so the chip
+     anatomy survives, and rely on the word as always. */
+  .st-tag::before { border: 1px solid CanvasText; background: Canvas; }
+  .st-step { border-top-color: CanvasText; }
+  .st-step--current { border-top-color: Highlight; }
+  .st-step--current .st-step__text { text-decoration: underline; }
+  .st-stat, .st-skeleton-card, .st-skeleton-stat, .st-skeleton-table { border-color: CanvasText; }
+  .st-tile, .st-modal, .st-cal, .st-table-wrap { border-color: ButtonText; }
+  .st-table tbody tr[aria-selected="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+  .st-table__batchbar { border-bottom: 2px solid ButtonText; }
+  .st-note { border: 1px solid CanvasText; border-left-width: 3px; }
+  .st-day--selected, .st-day--start, .st-day--end { outline: 2px solid Highlight; outline-offset: -2px; }
+  .st-day--inrange { outline: 1px solid CanvasText; outline-offset: -1px; }
+  .st-day--today { text-decoration: underline; }
+  .st-tab[aria-selected="true"] { border-bottom-color: Highlight; }
+  /* Layer 2 additions. Every one of these carries meaning by fill, which HCM
+     strips -- restated as border, outline or text weight. */
+  .st-shell__header, .st-shell__rail, .st-disclose, .st-steps, .st-toast,
+  .st-compare__panel, .st-waiting { border-color: CanvasText; }
+  .st-shell__panel { border-inline-start-color: CanvasText; }
+  /* The box carries meaning by FILL alone, which HCM strips. Restate as a border. */
+  .st-panel__box { border: 1px solid CanvasText; }
+  .st-shell__panel .st-tab[data-attention="true"]::before { background: Highlight; }
+  .st-panel__dismiss:focus-visible { outline-color: Highlight; }
+  .st-lineage__origin { border-color: CanvasText; }
+  button.st-rail__label:focus-visible, .st-rail__more:focus-visible { outline-color: Highlight; }
+  /* HCM strips the dashed edge's colour, and a stated hole that looks like an
+     ordinary row is the whole defect this component exists to remove. GrayText
+     is the OS channel for "present but unavailable", which is what both of
+     these are. */
+  .st-lineage__node--restricted, .st-lineage__horizon { border-color: GrayText; }
+  .st-shell__navlink[aria-current="page"],
+  .st-rail__link[aria-current="page"] { border-color: Highlight; background: Canvas;
+                                        text-decoration: underline; }
+  .st-step--current { outline: 2px solid Highlight; outline-offset: -2px; }
+  .st-step__num { border-color: CanvasText; }
+  .st-step--done .st-step__num,
+  .st-step--current .st-step__num { background: Highlight; color: HighlightText; border-color: Highlight; }
+  .st-step--failed .st-step__num { background: Canvas; color: CanvasText; border: 2px double CanvasText; }
+  .st-compare__panel--winning { outline: 2px solid Highlight; outline-offset: -2px; box-shadow: none; }
+  .st-stat__delta { border: 1px solid CanvasText; }
+  .st-stat__meter { border: 1px solid CanvasText; }
+  .st-stat__meter > i { background: Highlight; }
+  /* [6 Sep 2026] Everything added on this date that carries meaning by FILL, restated
+     as a border, an outline or a text weight -- the three channels HCM preserves. */
+  .st-meter { border: 1px solid CanvasText; }
+  .st-meter > i { background: Highlight; }
+  .st-codeblock { border-color: CanvasText; }
+  .st-pager { border-top-color: CanvasText; }
+  .st-pager__size .st-field { border-color: ButtonText; }
+  /* The spine and its nodes are the only thing saying these steps are one chain. */
+  .st-lineage__step::before { background: CanvasText; }
+  .st-lineage__step::after { border-color: CanvasText; background: Canvas; }
+  .st-lineage__step--terminal::after,
+  .st-lineage__step--origin::after { background: Highlight; border-color: Highlight; }
+  .st-toast { border-left-width: 3px; }
+  .st-search__field .st-field { border-color: ButtonText; }
+  .st-statusband a, .st-note a, .st-toast a, .st-empty a { color: LinkText; }
+  .st-skeleton { border: 1px solid GrayText; }
+  .st-loading__spinner { border-color: CanvasText; border-top-color: Highlight; }
+  .st-review { border-color: CanvasText; }
+  .st-statusband { border-color: CanvasText; }
+  .st-statusband__dot { border: 1px solid CanvasText; }
+  .st-statusband__item--stale, .st-statusband__item--blocked { text-decoration: underline; }
+  .st-empty { border-color: CanvasText; }
+  .st-table tbody tr.st-table__rowlink:focus-within { outline-color: Highlight; }
+}
+
+"""
+
+
+# ---------------------------------------------------------------------------
+# contrast audit
+# ---------------------------------------------------------------------------
+# Each pair: (label, foreground token, background token, required ratio, severity)
+#   "AA"       -- WCAG 1.4.3 / 1.4.11 applies; the build FAILS if it does not hold
+#   "advisory" -- reported but not enforced: decorative boundaries not required to
+#                 identify a component, and states WCAG explicitly exempts (disabled).
+AUDIT_PAIRS = [
+    # ---- layer 4: brief 4 --------------------------------------------------
+    ("Key code on page",               "text-primary",    "background",            4.5, "AA"),
+    ("Key code on tile",               "text-primary",    "layer-02",              4.5, "AA"),
+    ("Band link in blocked item",      "text-error",      "layer-01",              4.5, "AA"),
+    ("Band link in stale item",        "support-warning", "layer-01",              4.5, "AA"),
+    ("Note link inherits note text",   "text-primary",    "layer-01",              4.5, "AA"),
+
+    # ---- layer 3: field-reported gaps -------------------------------------
+    ("Status band text on band",       "text-primary",    "layer-01",              4.5, "AA"),
+    ("Status band stale text",         "support-warning", "layer-01",              4.5, "AA"),
+    ("Status band blocked text",       "text-error",      "layer-01",              4.5, "AA"),
+    ("Status band ok dot on band",     "support-success", "layer-01",              3.0, "AA"),
+    ("Status band stale dot on band",  "support-warning", "layer-01",              3.0, "AA"),
+    ("Status band blocked dot on band","support-error",   "layer-01",              3.0, "AA"),
+    ("Empty-state title on page",      "text-primary",    "background",            4.5, "AA"),
+    ("Empty-state body on page",       "text-secondary",  "background",            4.5, "AA"),
+    ("Empty-state dashed edge",        "border-strong-01","background",            3.0, "AA"),
+    ("Empty-state error edge",         "support-error",   "background",            3.0, "AA"),
+    ("Key-value term on tile",         "text-secondary",  "layer-02",              4.5, "AA"),
+    ("Key-value value on tile",        "text-primary",    "layer-02",              4.5, "AA"),
+    ("Sort arrow active on header",    "icon-primary",    "layer-accent-01",       3.0, "AA"),
+    ("Sort arrow idle on header",      "icon-secondary",  "layer-accent-01",       3.0, "AA"),
+    ("Rail count urgent on rail",      "support-warning", "layer-01",              4.5, "AA"),
+    ("Secondary text utility on page", "text-secondary",  "background",            4.5, "AA"),
+    ("Helper text utility on layer-02","text-helper",     "layer-02",              4.5, "AA"),
+
+    # ---- layer 2: shell, layout and the seven new components --------------
+    ("Shell nav link on header",       "text-secondary",  "layer-01",              4.5, "AA"),
+    ("Shell nav current on header",    "text-primary",    "layer-01",              4.5, "AA"),
+    ("Rail link on rail",              "text-secondary",  "layer-01",              4.5, "AA"),
+    ("Rail link selected on selected", "text-primary",    "layer-selected-01",     4.5, "AA"),
+    ("Rail meta on rail",              "text-helper",     "layer-01",              4.5, "AA"),
+    ("Rail current marker on rail",    "border-interactive", "layer-01",           3.0, "AA"),
+    ("Breadcrumb link on page",        "link-primary",    "background",            4.5, "AA"),
+    ("Breadcrumb current on page",     "text-primary",    "background",            4.5, "AA"),
+    ("Work-waiting label on its pill", "text-primary",    "layer-02",              4.5, "AA"),
+    ("Work-waiting due count",         "support-warning", "layer-02",              4.5, "AA"),
+    ("Work-waiting border on header",  "border-subtle-01","layer-01",              1.0, "advisory"),
+    ("Avatar initials on avatar",      "text-primary",    "layer-accent-01",       4.5, "AA"),
+    ("Toast body on toast",            "text-primary",    "layer-02",              4.5, "AA"),
+    ("Toast success rule on toast",    "support-success", "layer-02",              3.0, "AA"),
+    ("Toast warning rule on toast",    "support-warning", "layer-02",              3.0, "AA"),
+    ("Toast info rule on toast",       "support-info",    "layer-02",              3.0, "AA"),
+    ("Search icon on field",           "icon-secondary",  "field-01",              3.0, "AA"),
+    ("Search count on page",           "text-secondary",  "background",            4.5, "AA"),
+    ("Search count over-limit",        "support-warning", "background",            4.5, "AA"),
+    ("Disclosure title on summary",    "text-primary",    "layer-02",              4.5, "AA"),
+    ("Disclosure meta on summary",     "text-helper",     "layer-02",              4.5, "AA"),
+    ("Disclosure chevron on summary",  "icon-secondary",  "layer-02",              3.0, "AA"),
+    ("Disclosure body text",           "text-primary",    "layer-01",              4.5, "AA"),
+    ("Disclosure empty summary",       "text-secondary",  "layer-02",              4.5, "AA"),
+    ("Step label on step",             "text-primary",    "layer-02",              4.5, "AA"),
+    ("Step position on step",          "text-helper",     "layer-02",              4.5, "AA"),
+    ("Step todo label on step",        "text-secondary",  "layer-02",              4.5, "AA"),
+    ("Step current label on selected", "text-primary",    "layer-selected-01",     4.5, "AA"),
+    ("Step done numeral on success",   "text-inverse",    "support-success",       4.5, "AA"),
+    ("Step current numeral on brand",  "text-on-color",   "background-brand",      4.5, "AA"),
+    ("Step failed numeral on error",   "text-inverse",    "support-error",         4.5, "AA"),
+    ("Step failed label on step",      "text-error",      "layer-02",              4.5, "AA"),
+    ("Step numeral border on page",    "border-strong-01","background",            3.0, "AA"),
+    ("Stat figure on page",            "text-primary",    "background",            4.5, "AA"),
+    ("Stat label on page",             "text-secondary",  "background",            4.5, "AA"),
+    ("Stat delta up on its chip",      "support-success", "support-success-subtle",4.5, "AA"),
+    ("Stat delta down on its chip",    "text-error",      "support-error-subtle",  4.5, "AA"),
+    ("Stat meter fill on its track",   "border-interactive","layer-accent-01",     3.0, "AA"),
+    ("Stat meter warn on its track",   "support-warning", "layer-accent-01",       3.0, "AA"),
+    ("Stat unavailable on page",       "text-secondary",  "background",            4.5, "AA"),
+    ("Comparison before cell",         "text-secondary",  "layer-01",              4.5, "AA"),
+    ("Comparison unchanged cell",      "text-secondary",  "layer-accent-01",       4.5, "AA"),
+    ("Comparison panel body",          "text-primary",    "layer-02",              4.5, "AA"),
+    ("Comparison attribution",         "text-secondary",  "layer-02",              4.5, "AA"),
+    ("Comparison winning rule",        "border-interactive", "layer-02",           3.0, "AA"),
+    ("Comparison absent dashed edge",  "border-strong-01","layer-02",              3.0, "AA"),
+
+    # ---- text on surfaces -------------------------------------------------
+    ("Body text on page",              "text-primary",    "background",            4.5, "AA"),
+    ("Body text on layer-01",          "text-primary",    "layer-01",              4.5, "AA"),
+    ("Body text on layer-02",          "text-primary",    "layer-02",              4.5, "AA"),
+    ("Body text on layer-accent-01",   "text-primary",    "layer-accent-01",       4.5, "AA"),
+    ("Secondary text on page",         "text-secondary",  "background",            4.5, "AA"),
+    ("Secondary text on layer-01",     "text-secondary",  "layer-01",              4.5, "AA"),
+    ("Secondary text on zebra row",    "text-secondary",  "layer-accent-01",       4.5, "AA"),
+    ("Helper text on page",            "text-helper",     "background",            4.5, "AA"),
+
+    # ---- layer 5: brief 6 -- lineage (CP-01) -------------------------------
+    ("Lineage hop label on page",      "text-secondary",  "background",            4.5, "AA"),
+    ("Lineage hop count on page",      "text-helper",     "background",            4.5, "AA"),
+    ("Lineage node text on page",      "text-primary",    "background",            4.5, "AA"),
+    ("Lineage description on page",    "text-secondary",  "background",            4.5, "AA"),
+    ("Lineage restricted text on page","text-helper",     "background",            4.5, "AA"),
+    ("Lineage restricted edge",        "border-strong-01","background",            3.0, "AA"),
+    ("Lineage horizon edge",           "border-strong-01","background",            3.0, "AA"),
+    ("Lineage origin on page",         "text-primary",    "layer-01",              4.5, "AA"),
+    ("Lineage band rule on page",      "border-subtle-01","background",            1.0, "advisory"),
+    ("Rail group count on rail",       "text-helper",     "layer-01",              4.5, "AA"),
+    ("Rail overflow row on rail",      "text-helper",     "layer-01",              4.5, "AA"),
+    ("Rail selected text on selection","text-primary",    "layer-selected-01",     4.5, "AA"),
+    ("Rail selected icon on selection","border-interactive","layer-selected-01",    3.0, "AA"),
+    ("Panel title on panel",           "text-primary",    "layer-01",              4.5, "AA"),
+    ("Panel edge on page",             "border-subtle-01","background",            1.0, "advisory"),
+    ("Panel box text on box",          "text-primary",    "layer-accent-01",       4.5, "AA"),
+    ("Panel box label on box",         "text-secondary",  "layer-accent-01",       4.5, "AA"),
+    ("Panel attention dot on panel",   "support-warning", "layer-01",              3.0, "AA"),
+    ("Helper text on layer-01",        "text-helper",     "layer-01",              4.5, "AA"),
+    ("Placeholder on field-01",        "text-placeholder","field-01",              4.5, "AA"),
+    ("Placeholder on field-02",        "text-placeholder","field-02",              4.5, "AA"),
+    ("Field value on field-01",        "text-primary",    "field-01",              4.5, "AA"),
+    ("Out-of-month day",               "text-secondary",  "layer-02",              4.5, "AA"),
+    ("Error message on page",          "text-error",      "background",            4.5, "AA"),
+    ("Error message on layer-01",      "text-error",      "layer-01",              4.5, "AA"),
+    ("Text on background-inverse",     "text-inverse",    "background-inverse",    4.5, "AA"),
+    # ---- links ------------------------------------------------------------
+    ("Link on page",                   "link-primary",    "background",            4.5, "AA"),
+    ("Link on layer-01",               "link-primary",    "layer-01",              4.5, "AA"),
+    ("Link hover on page",             "link-hover",      "background",            4.5, "AA"),
+    ("Visited link on page",           "link-visited",    "background",            4.5, "AA"),
+    ("Today, in the calendar",         "link-primary",    "layer-02",              4.5, "AA"),
+    # ---- filled controls --------------------------------------------------
+    ("Label on primary button",        "text-on-color",   "button-primary",        4.5, "AA"),
+    ("Label on primary hover",         "text-on-color",   "button-primary-hover",  4.5, "AA"),
+    ("Label on primary active",        "text-on-color",   "button-primary-active", 4.5, "AA"),
+    ("Label on tertiary hover",        "text-on-color",   "button-primary",        4.5, "AA"),
+    ("Label on secondary button",      "text-on-color",   "button-secondary",      4.5, "AA"),
+    ("Label on secondary hover",       "text-on-color",   "button-secondary-hover",4.5, "AA"),
+    ("Label on danger button",         "text-on-color",   "button-danger",         4.5, "AA"),
+    ("Label on danger hover",          "text-on-color",   "button-danger-hover",   4.5, "AA"),
+    ("Batch bar text",                 "text-on-color",   "background-brand",      4.5, "AA"),
+    ("Selected date, in the calendar", "text-on-color",   "background-brand",      4.5, "AA"),
+    ("In-range date text",             "text-primary",    "highlight",             4.5, "AA"),
+    ("Selected row text",              "text-primary",    "layer-selected-01",     4.5, "AA"),
+    # ---- non-text: boundaries and states (1.4.11) -------------------------
+    ("Field border on page",           "border-strong-01","background",            3.0, "AA"),
+    ("Field border on layer-01",       "border-strong-01","layer-01",              3.0, "AA"),
+    ("Field border on field-01",       "border-strong-01","field-01",              3.0, "AA"),
+    ("Focus ring on page",             "focus",           "background",            3.0, "AA"),
+    ("Focus ring on layer-01",         "focus",           "layer-01",              3.0, "AA"),
+    ("Focus ring on field-01",         "focus",           "field-01",              3.0, "AA"),
+    ("Focus ring on primary button",   "focus-inset",     "button-primary",        3.0, "AA"),
+    ("Focus ring on danger button",    "focus-inset",     "button-danger",         3.0, "AA"),
+    ("Interactive border on page",     "border-interactive","background",          3.0, "AA"),
+    ("Selected tab underline",         "border-interactive","background",          3.0, "AA"),
+    ("Checkbox border on page",        "icon-primary",    "background",            3.0, "AA"),
+    ("Checkbox border on layer-01",    "icon-primary",    "layer-01",              3.0, "AA"),
+    ("Toggle off track on page",       "toggle-off",      "background",            3.0, "AA"),
+    ("Toggle on track on page",        "support-success", "background",            3.0, "AA"),
+    ("Toggle handle on off track",     "toggle-handle",   "toggle-off",            3.0, "AA"),
+    ("Toggle handle on on track",      "toggle-handle",   "support-success",       3.0, "AA"),
+    ("Secondary icon on layer-01",     "icon-secondary",  "layer-01",              3.0, "AA"),
+    ("Interactive icon on field-01",   "icon-interactive","field-01",              3.0, "AA"),
+    # ---- status -----------------------------------------------------------
+    ("Error status on page",           "support-error",   "background",            3.0, "AA"),
+    ("Success status on page",         "support-success", "background",            3.0, "AA"),
+    ("Warning status on page",         "support-warning", "background",            3.0, "AA"),
+    ("Info status on page",            "support-info",    "background",            3.0, "AA"),
+    ("Error icon on error banner",     "support-error",   "support-error-subtle",  3.0, "AA"),
+    ("Success icon on success banner", "support-success", "support-success-subtle",3.0, "AA"),
+    ("Warning icon on warning banner", "support-warning", "support-warning-subtle",3.0, "AA"),
+    ("Info icon on info banner",       "support-info",    "support-info-subtle",   3.0, "AA"),
+    ("Title on error banner",          "text-primary",    "support-error-subtle",  4.5, "AA"),
+    ("Title on warning banner",        "text-primary",    "support-warning-subtle",4.5, "AA"),
+    ("Body on success banner",         "text-secondary",  "support-success-subtle",4.5, "AA"),
+    ("Body on info banner",            "text-secondary",  "support-info-subtle",   4.5, "AA"),
+    # ---- alpha tokens, genuinely composited -------------------------------
+    ("Text over hover wash",           "text-primary",    "background-hover",      4.5, "AA"),
+    ("Text over active wash",          "text-primary",    "background-active",     4.5, "AA"),
+    ("Text over selected wash",        "text-primary",    "background-selected",   4.5, "AA"),
+    # ---- advisory: exempt or decorative -----------------------------------
+    ("Disabled text on page",          "text-disabled",   "background",            3.0, "advisory"),
+    ("Disabled text on disabled fill", "text-disabled",   "button-disabled",       3.0, "advisory"),
+    ("Disabled icon on field-01",      "icon-disabled",   "field-01",              3.0, "advisory"),
+    ("Disabled border on page",        "border-disabled", "background",            3.0, "advisory"),
+    ("Subtle border on layer-01",      "border-subtle-01","layer-01",              3.0, "advisory"),
+    ("Subtle border on page",          "border-subtle-00","background",            3.0, "advisory"),
+    ("Skeleton element on skeleton",   "skeleton-element","skeleton-background",   3.0, "advisory"),
+]
+
+# [encode 2026-08-20, ledger E-09] The tag is the dot-chip: the chip surface is
+# layer-01 with a subtle border, the WORD carries the meaning, and the hue lives
+# in a 7px dot — grade 60 in light, 40 in dark — audited as a non-text affordance
+# against the chip surface. The old pill pairs (grade-20 surface / grade-80
+# label) are retired with the pill itself.
+TAG_HUES = ["blue", "teal", "green", "amber", "red", "magenta"]
+
+# [encode 2026-08-20, ledger E-12/E-17] The appearance axes introduce pairs that
+# semantic tokens cannot express (they are primitive-ramp choices, exactly like
+# the tag hues), so they are audited directly. Format: label, fg ref, bg ref,
+# need, sev — refs are resolve()-style.
+APPEARANCE_PAIRS = [
+    # table-head-tint (light: blue-80 on blue-20; dark: blue-20 on blue-90)
+    ("Tinted table header text",   ("blue.80", "blue.20"), ("blue.20", "blue.90"), 4.5, "AA"),
+    # table-head-strong (blue-80 fill, white text, both themes)
+    ("Strong table header text",   ("white",   "white"),   ("blue.80", "blue.80"), 4.5, "AA"),
+    # chrome-coloured (blue-90 chrome, both themes)
+    ("Coloured chrome nav link",   ("blue.30", "blue.30"), ("blue.90", "blue.90"), 4.5, "AA"),
+    ("Coloured chrome nav current",("white",   "white"),   ("blue.90", "blue.90"), 4.5, "AA"),
+    ("Coloured chrome waiting",    ("white",   "white"),   ("blue.80", "blue.80"), 4.5, "AA"),
+    ("Coloured chrome wait count", ("blue.30", "blue.30"), ("blue.80", "blue.80"), 4.5, "AA"),
+    ("Coloured chrome avatar",     ("blue.80", "blue.80"), ("blue.20", "blue.20"), 4.5, "AA"),
+    ("Explorer rail current",      ("blue.80", "blue.20"), ("blue.10", "blue.90"), 4.5, "AA"),
+]
+
+
+def audit():
+    rows = []
+    for theme, idx in (("light", 0), ("dark", 1)):
+        for label, fg, bg, need, sev in AUDIT_PAIRS:
+            # resolve the backdrop first, then composite the foreground onto it
+            page = resolve(T.SEMANTIC["background"][idx])
+            b = composite(T.SEMANTIC[bg][idx], page)
+            f = composite(T.SEMANTIC[fg][idx], b)
+            rows.append(dict(theme=theme, label=label, fg=fg, bg=bg,
+                             fg_hex=f, bg_hex=b, ratio=contrast(f, b), need=need, sev=sev,
+                             ok=contrast(f, b) >= need))
+        # dot-chip: label text on the chip surface (AA), dot on the chip (non-text)
+        chip = composite(T.SEMANTIC["layer-01"][idx],
+                         resolve(T.SEMANTIC["background"][idx]))
+        label_hex = composite(T.SEMANTIC["text-primary"][idx], chip)
+        r = contrast(label_hex, chip)
+        rows.append(dict(theme=theme, label="Tag label on chip",
+                         fg="text-primary", bg="layer-01",
+                         fg_hex=label_hex, bg_hex=chip, ratio=r, need=4.5, sev="AA",
+                         ok=r >= 4.5))
+        for hue in TAG_HUES:
+            dot = PALETTE[hue][60 if idx == 0 else 40]
+            r2 = contrast(dot, chip)
+            rows.append(dict(theme=theme, label=f"Tag dot on chip — {hue}",
+                             fg=f"{hue}.{60 if idx == 0 else 40}", bg="layer-01",
+                             fg_hex=dot, bg_hex=chip, ratio=r2, need=3.0, sev="advisory",
+                             ok=r2 >= 3.0))
+        for label, fgs, bgs, need, sev in APPEARANCE_PAIRS:
+            f = composite(fgs[idx], resolve(bgs[idx]))
+            b = resolve(bgs[idx])
+            r3 = contrast(f, b)
+            rows.append(dict(theme=theme, label=label, fg=fgs[idx], bg=bgs[idx],
+                             fg_hex=f, bg_hex=b, ratio=r3, need=need, sev=sev,
+                             ok=r3 >= need))
+    return rows
+
+
+def audit_failures(rows=None):
+    """Only AA-severity failures block the build."""
+    rows = rows or audit()
+    return [r for r in rows if r["sev"] == "AA" and not r["ok"]]

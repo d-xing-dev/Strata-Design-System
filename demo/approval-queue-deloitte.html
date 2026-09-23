@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Payments awaiting release — Strata demo (deloitte)</title>
+<link rel="stylesheet" href="../dist/deloitte/strata.css">
+<style>
+  /* Review chrome only. The product below carries no page-specific CSS at all. */
+  body { margin: 0; font-family: var(--st-font-sans); color: var(--st-text-primary); }
+  .demo-bar { position: sticky; top: 0; height: 44px; z-index: 60;
+               display: flex; align-items: center; gap: 16px; padding-inline: 16px;
+               background: var(--st-layer-accent-01);
+               border-bottom: 1px solid var(--st-border-subtle-01);
+               font: 400 12px/1 var(--st-font-sans); color: var(--st-text-secondary); }
+  .demo-bar b { color: var(--st-text-primary); }
+  .demo-bar a { color: var(--st-link-primary); }
+</style>
+</head>
+<body>
+<div class="demo-bar" data-review>
+  <b>Strata demo — payment release queue</b>
+  <span>brand <b>deloitte</b> · shell <b>--task --norail</b> · density comfortable · appearance default</span>
+  <span>· the other render: <a href="approval-queue-scaffold.html">scaffold</a></span>
+</div>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true" data-strata-icons="1"><symbol id="st-i-chevron-right" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7l9 9-9 9"/></symbol><symbol id="st-i-chevron-down" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12l9 9 9-9"/></symbol><symbol id="st-i-close" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8l16 16M24 8L8 24"/></symbol><symbol id="st-i-check" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 17l7 7L26 9"/></symbol><symbol id="st-i-search" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="14" r="8"/><path d="M20 20l6.5 6.5"/></symbol><symbol id="st-i-sort" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 8l7 9H9z" fill="currentColor" stroke="none"/></symbol><symbol id="st-i-success" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="16" r="12"/><path d="M10 16.5l4 4L22 12"/></symbol><symbol id="st-i-warning" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 5l13 22H3z"/><path d="M16 13v6"/><path d="M16 22.5v.5"/></symbol><symbol id="st-i-error" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="16" r="12"/><path d="M11 11l10 10M21 11L11 21"/></symbol><symbol id="st-i-info" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="16" r="12"/><path d="M16 14v9"/><path d="M16 9.5v.5"/></symbol><symbol id="st-i-menu" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9h22M5 16h22M5 23h22"/></symbol><symbol id="st-i-help" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="16" r="12"/><path d="M12.5 12.5a3.5 3.5 0 1 1 3.5 3.5V19"/><path d="M16 23v.5"/></symbol><symbol id="st-i-settings" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h9M19 10h9M4 22h5M15 22h13"/><circle cx="16" cy="10" r="3"/><circle cx="12" cy="22" r="3"/></symbol><symbol id="st-i-external" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 6h12v12"/><path d="M26 6L14 18"/><path d="M22 20v6H6V10h6"/></symbol><symbol id="st-i-filter" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h24l-9 10v9l-6-3v-6z"/></symbol><symbol id="st-i-more" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="16" r="1.6" fill="currentColor" stroke="none"/><circle cx="16" cy="16" r="1.6" fill="currentColor" stroke="none"/><circle cx="24" cy="16" r="1.6" fill="currentColor" stroke="none"/></symbol><symbol id="st-i-grid" viewBox="0 0 16 16"><path d="M2.5 2.5h4.4v4.4H2.5zM9.1 2.5h4.4v4.4H9.1zM2.5 9.1h4.4v4.4H2.5zM9.1 9.1h4.4v4.4H9.1z" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol><symbol id="st-i-mail" viewBox="0 0 16 16"><path d="M2 3.5h12v9H2zM2 4.5l6 4.5 6-4.5" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol><symbol id="st-i-box" viewBox="0 0 16 16"><path d="M2 5l6-2.8L14 5v6l-6 2.8L2 11zM2 5l6 2.7L14 5M8 7.7v6" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol><symbol id="st-i-clock" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.8V8l2.4 1.6" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol><symbol id="st-i-star" viewBox="0 0 16 16"><path d="M8 2.4l1.7 3.5 3.8.6-2.8 2.7.7 3.8L8 11.2 4.6 13l.7-3.8L2.5 6.5l3.8-.6z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol></svg>
+
+<a class="st-skip" href="#main">Skip to main content</a>
+
+<div class="st-shell st-shell--task st-shell--norail" data-density="comfortable"
+     data-product style="--st-shell-offset: 44px">
+
+  <header class="st-shell__header" data-region="app.identity">
+    <a class="st-shell__brand" href="#main">Meridian <small>payment operations</small></a>
+    <nav class="st-shell__nav" data-region="app.primary-nav" aria-label="Primary">
+      <a class="st-shell__navlink" href="#main" aria-current="page">Release queue</a>
+      <a class="st-shell__navlink" href="#main">Counterparties</a>
+      <a class="st-shell__navlink" href="#main">Limits</a>
+      <a class="st-shell__navlink" href="#main">Audit</a>
+    </nav>
+    <span class="st-shell__spacer"></span>
+    <a class="st-waiting st-waiting--due" href="#main" data-region="app.work-waiting">
+      <span class="st-waiting__count">12</span>
+      <span class="st-waiting__label">waiting on you</span>
+    </a>
+    <div class="st-shell__util" data-region="app.utility">
+      <button class="st-shell__utilbtn" aria-label="Help"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-help"></use></svg></button>
+      <button class="st-shell__utilbtn" aria-label="Settings"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-settings"></use></svg></button>
+    </div>
+    <span class="st-shell__account" data-region="app.account">
+      <span class="st-shell__avatar" aria-hidden="true">DX</span>
+      <span>D. Xing · Approver</span>
+    </span>
+  </header>
+
+  <div class="st-statusband" data-region="app.subject-state" role="status">
+    <span class="st-statusband__item st-statusband__item--stale">
+      <span class="st-statusband__dot" aria-hidden="true"></span>
+      Balances are 6 minutes old</span>
+    <span class="st-statusband__item">
+      <span class="st-statusband__dot" aria-hidden="true"></span>
+      Same-day EUR cut-off in 47 minutes</span>
+    <span class="st-statusband__item">
+      <span class="st-statusband__dot" aria-hidden="true"></span>
+      Last release confirmed 09:12</span>
+  </div>
+
+  <main class="st-shell__main" id="main" tabindex="-1">
+    <div class="st-container">
+      <div class="st-page">
+
+        <div class="st-page__head">
+          <div>
+            <h1 class="st-heading-md st-page__title">Payments awaiting release</h1>
+            <p class="st-body-md st-page__sub">Everything approved by a preparer and now waiting
+              on a second signature. Payments over a counterparty limit are held here rather than
+              hidden, because a payment you cannot see is indistinguishable from one that was
+              never raised.</p>
+          </div>
+          <div class="st-row" style="--gap: var(--st-space-03)">
+            <button class="st-btn st-btn--tertiary st-btn--md">Export the queue</button>
+            <button class="st-btn st-btn--primary st-btn--md">Release 8 approved</button>
+          </div>
+        </div>
+
+        <section class="st-section">
+          <div class="st-grid">
+            <div class="st-col st-col--quarter">
+              <div class="st-stat" data-region="queue.needs-me">
+                <div class="st-stat__figure">12</div>
+                <div class="st-stat__label">awaiting approval</div>
+              </div>
+            </div>
+            <div class="st-col st-col--quarter">
+              <div class="st-stat" data-region="queue.ready">
+                <div class="st-stat__figure">8</div>
+                <div class="st-stat__label">ready to release</div>
+              </div>
+            </div>
+            <div class="st-col st-col--quarter">
+              <div class="st-stat" data-region="queue.breached">
+                <div class="st-stat__figure">2</div>
+                <div class="st-stat__label">held over a limit</div>
+              </div>
+            </div>
+            <div class="st-col st-col--quarter">
+              <div class="st-stat" data-region="queue.value">
+                <div class="st-stat__figure">48.2m</div>
+                <div class="st-stat__label">GBP releasing today</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="st-note st-note--warning" role="status" data-region="queue.limit-breach">
+          <svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-warning"></use></svg>
+          <div>
+            <p class="st-note__title">Two payments exceed the Brightwater Energy limit</p>
+            <p class="st-note__body">Together they are 1.02m over the 2.42m daily limit. Neither can
+              be released until Treasury raises the limit or the value date moves, and this notice
+              stays on the screen until one of those happens —
+              <a href="#main">open the limit request</a>.</p>
+          </div>
+        </div>
+
+        <section class="st-section">
+          <div class="st-section__head">
+            <h2 class="st-heading-sm">The queue</h2>
+            <span class="st-helper">Sorted by value date, then reference</span>
+          </div>
+
+          <div class="st-grid">
+            <div class="st-col" style="--span:16; --span-lg:8">
+              <div class="st-search" data-region="queue.search">
+                <label class="st-search__field">
+                  <span class="st-search__icon" aria-hidden="true"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-search"></use></svg></span>
+                  <span class="st-visually-hidden">Find a payment</span>
+                  <input class="st-field" type="search" placeholder="Reference, counterparty or amount"
+                         aria-describedby="queue-count">
+                </label>
+                <div class="st-search__count" id="queue-count" aria-live="polite">
+                  <b>12</b> shown of <b>247</b> in the queue
+                </div>
+              </div>
+            </div>
+            <div class="st-col" style="--span:16; --span-md:8; --span-lg:4">
+              <div class="st-formitem" data-region="queue.filter-date">
+                <label class="st-lbl st-label-sm" for="f-date">Value date</label>
+                <div class="st-field-wrap">
+                  <select class="st-field" id="f-date">
+                    <option>Today and tomorrow</option>
+                    <option>Today only</option>
+                    <option>This week</option>
+                  </select>
+                  <svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-chevron-down"></use></svg>
+                </div>
+              </div>
+            </div>
+            <div class="st-col" style="--span:16; --span-md:8; --span-lg:4">
+              <div class="st-formitem" data-region="queue.filter-status">
+                <label class="st-lbl st-label-sm" for="f-status">Status</label>
+                <div class="st-field-wrap">
+                  <select class="st-field" id="f-status">
+                    <option>Not yet released</option>
+                    <option>Needs you</option>
+                    <option>Over limit</option>
+                  </select>
+                  <svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-chevron-down"></use></svg>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="st-row" style="--gap: var(--st-space-03); margin-bottom: var(--st-space-05)"
+               data-region="queue.applied-filters">
+            <span class="st-helper">Filters in force</span>
+            <span class="st-tag st-tag--interactive">Value date 23–24 Aug
+              <button class="st-tag__x" aria-label="Remove the value date filter"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-close"></use></svg></button></span>
+            <span class="st-tag st-tag--interactive">Excludes released
+              <button class="st-tag__x" aria-label="Remove the released filter"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-close"></use></svg></button></span>
+          </div>
+
+          <div class="st-table-wrap">
+            <div class="st-table__batchbar" data-region="queue.bulk-actions">
+              <span><b>3</b> payments selected · 303,395.40 GBP</span>
+              <div class="st-btn-group">
+                <button class="st-btn st-btn--ghost st-btn--sm">Approve all three</button>
+                <button class="st-btn st-btn--ghost st-btn--sm">Return all three</button>
+                <button class="st-btn st-btn--ghost st-btn--sm">Clear the selection</button>
+              </div>
+            </div>
+            <table class="st-table" data-region="queue.table">
+              <thead>
+                <tr>
+                  <th scope="col">
+                    <label class="st-choice">
+                      <input class="st-check" type="checkbox">
+                      <span class="st-check__box"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-check"></use></svg></span>
+                      <span class="st-visually-hidden">Select every payment shown</span>
+                    </label>
+                  </th>
+                  <th scope="col">Reference</th>
+                  <th scope="col">Counterparty</th>
+                  <th scope="col" class="st-num" aria-sort="ascending">
+                    <button class="st-table__sort" type="button">Value date
+                      <svg class="st-table__sortarrow" viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-sort"></use></svg></button></th>
+                  <th scope="col" class="st-num">Amount</th>
+                  <th scope="col" class="st-num">Approvals</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+            <tr class="st-table__rowlink">
+              <td>
+                <label class="st-choice">
+                  <input class="st-check" type="checkbox">
+                  <span class="st-check__box"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-check"></use></svg></span>
+                  <span class="st-visually-hidden">Select payment PMT-4471</span>
+                </label>
+              </td>
+              <td><a class="st-code" href="#detail">PMT-4471</a></td>
+              <td class="st-truncate">Brightwater Energy</td>
+              <td class="st-num">23 Aug</td>
+              <td class="st-num">2,480,000.00</td>
+              <td class="st-num">1 of 2</td>
+              <td><span class="st-tag st-tag--red">Over limit</span></td>
+            </tr>
+            <tr class="st-table__rowlink" aria-selected="true">
+              <td>
+                <label class="st-choice">
+                  <input class="st-check" type="checkbox" checked>
+                  <span class="st-check__box"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-check"></use></svg></span>
+                  <span class="st-visually-hidden">Select payment PMT-4472</span>
+                </label>
+              </td>
+              <td><a class="st-code" href="#detail">PMT-4472</a></td>
+              <td class="st-truncate">Corran Logistics</td>
+              <td class="st-num">23 Aug</td>
+              <td class="st-num">184,300.00</td>
+              <td class="st-num">1 of 2</td>
+              <td><span class="st-tag st-tag--amber">Needs you</span></td>
+            </tr>
+            <tr class="st-table__rowlink">
+              <td>
+                <label class="st-choice">
+                  <input class="st-check" type="checkbox">
+                  <span class="st-check__box"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-check"></use></svg></span>
+                  <span class="st-visually-hidden">Select payment PMT-4473</span>
+                </label>
+              </td>
+              <td><a class="st-code" href="#detail">PMT-4473</a></td>
+              <td class="st-truncate">Brightwater Energy</td>
+              <td class="st-num">23 Aug</td>
+              <td class="st-num">960,000.00</td>
+              <td class="st-num">1 of 2</td>
+              <td><span class="st-tag st-tag--red">Over limit</span></td>
+            </tr>
+            <tr class="st-table__rowlink" aria-selected="true">
+              <td>
+                <label class="st-choice">
+                  <input class="st-check" type="checkbox" checked>
+                  <span class="st-check__box"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-check"></use></svg></span>
+                  <span class="st-visually-hidden">Select payment PMT-4474</span>
+                </label>
+              </td>
+              <td><a class="st-code" href="#detail">PMT-4474</a></td>
+              <td class="st-truncate">Halden Manufacturing</td>
+              <td class="st-num">23 Aug</td>
+              <td class="st-num">76,915.40</td>
+              <td class="st-num">1 of 2</td>
+              <td><span class="st-tag st-tag--amber">Needs you</span></td>
+            </tr>
+            <tr class="st-table__rowlink">
+              <td>
+                <label class="st-choice">
+                  <input class="st-check" type="checkbox">
+                  <span class="st-check__box"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-check"></use></svg></span>
+                  <span class="st-visually-hidden">Select payment PMT-4475</span>
+                </label>
+              </td>
+              <td><a class="st-code" href="#detail">PMT-4475</a></td>
+              <td class="st-truncate">Ostrand Chemicals</td>
+              <td class="st-num">23 Aug</td>
+              <td class="st-num">1,205,000.00</td>
+              <td class="st-num">2 of 2</td>
+              <td><span class="st-tag st-tag--green">Ready to release</span></td>
+            </tr>
+            <tr class="st-table__rowlink" aria-selected="true">
+              <td>
+                <label class="st-choice">
+                  <input class="st-check" type="checkbox" checked>
+                  <span class="st-check__box"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-check"></use></svg></span>
+                  <span class="st-visually-hidden">Select payment PMT-4476</span>
+                </label>
+              </td>
+              <td><a class="st-code" href="#detail">PMT-4476</a></td>
+              <td class="st-truncate">Corran Logistics</td>
+              <td class="st-num">24 Aug</td>
+              <td class="st-num">42,180.00</td>
+              <td class="st-num">1 of 2</td>
+              <td><span class="st-tag st-tag--amber">Needs you</span></td>
+            </tr>
+            <tr class="st-table__rowlink">
+              <td>
+                <label class="st-choice">
+                  <input class="st-check" type="checkbox">
+                  <span class="st-check__box"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-check"></use></svg></span>
+                  <span class="st-visually-hidden">Select payment PMT-4477</span>
+                </label>
+              </td>
+              <td><a class="st-code" href="#detail">PMT-4477</a></td>
+              <td class="st-truncate">Vellmar Freight</td>
+              <td class="st-num">23 Aug</td>
+              <td class="st-num">318,750.00</td>
+              <td class="st-num">2 of 2</td>
+              <td><span class="st-tag st-tag--green">Ready to release</span></td>
+            </tr>
+            <tr class="st-table__rowlink">
+              <td>
+                <label class="st-choice">
+                  <input class="st-check" type="checkbox">
+                  <span class="st-check__box"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-check"></use></svg></span>
+                  <span class="st-visually-hidden">Select payment PMT-4478</span>
+                </label>
+              </td>
+              <td><a class="st-code" href="#detail">PMT-4478</a></td>
+              <td class="st-truncate">Ostrand Chemicals</td>
+              <td class="st-num">23 Aug</td>
+              <td class="st-num">509,400.00</td>
+              <td class="st-num">0 of 2</td>
+              <td><span class="st-tag st-tag--amber">Held — cut-off</span></td>
+            </tr>
+            <tr class="st-table__rowlink">
+              <td>
+                <label class="st-choice">
+                  <input class="st-check" type="checkbox">
+                  <span class="st-check__box"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-check"></use></svg></span>
+                  <span class="st-visually-hidden">Select payment PMT-4479</span>
+                </label>
+              </td>
+              <td><a class="st-code" href="#detail">PMT-4479</a></td>
+              <td class="st-truncate">Kelso Interiors</td>
+              <td class="st-num">24 Aug</td>
+              <td class="st-num">9,640.00</td>
+              <td class="st-num">1 of 2</td>
+              <td><span class="st-tag st-tag--blue">Second approval</span></td>
+            </tr>
+            <tr class="st-table__rowlink">
+              <td>
+                <label class="st-choice">
+                  <input class="st-check" type="checkbox">
+                  <span class="st-check__box"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-check"></use></svg></span>
+                  <span class="st-visually-hidden">Select payment PMT-4480</span>
+                </label>
+              </td>
+              <td><a class="st-code" href="#detail">PMT-4480</a></td>
+              <td class="st-truncate">Vellmar Freight</td>
+              <td class="st-num">24 Aug</td>
+              <td class="st-num">127,900.00</td>
+              <td class="st-num">2 of 2</td>
+              <td><span class="st-tag st-tag--green">Ready to release</span></td>
+            </tr>
+            <tr class="st-table__rowlink">
+              <td>
+                <label class="st-choice">
+                  <input class="st-check" type="checkbox">
+                  <span class="st-check__box"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-check"></use></svg></span>
+                  <span class="st-visually-hidden">Select payment PMT-4481</span>
+                </label>
+              </td>
+              <td><a class="st-code" href="#detail">PMT-4481</a></td>
+              <td class="st-truncate">Halden Manufacturing</td>
+              <td class="st-num">24 Aug</td>
+              <td class="st-num">233,050.00</td>
+              <td class="st-num">1 of 2</td>
+              <td><span class="st-tag st-tag--blue">Second approval</span></td>
+            </tr>
+            <tr class="st-table__rowlink">
+              <td>
+                <label class="st-choice">
+                  <input class="st-check" type="checkbox">
+                  <span class="st-check__box"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-check"></use></svg></span>
+                  <span class="st-visually-hidden">Select payment PMT-4482</span>
+                </label>
+              </td>
+              <td><a class="st-code" href="#detail">PMT-4482</a></td>
+              <td class="st-truncate">Kelso Interiors</td>
+              <td class="st-num">25 Aug</td>
+              <td class="st-num">18,220.00</td>
+              <td class="st-num">2 of 2</td>
+              <td><span class="st-tag st-tag--green">Ready to release</span></td>
+            </tr>
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="7">
+                    <span class="st-helper">235 more in this queue, beyond the filters in force.</span>
+                    <button class="st-btn st-btn--tertiary st-btn--sm">Show the next 12</button>
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </main>
+
+  <aside class="st-shell__panel" id="detail" data-region="app.detail" data-open="true"
+         aria-label="Payment PMT-4471">
+    <div class="st-panel__head">
+      <h2 class="st-panel__title">PMT-4471</h2>
+      <button class="st-panel__dismiss" aria-label="Close the payment detail">
+        <svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true"><use href="#st-i-close"></use></svg>
+      </button>
+    </div>
+    <div class="st-panel__body">
+      <div class="st-panel__section">
+        <span class="st-tag st-tag--red">Over limit</span>
+        <p class="st-body-sm" style="margin: var(--st-space-04) 0 0">Brightwater Energy is 1.02m
+          over its daily limit once this payment and PMT-4473 are counted together. Approving one
+          of the two clears the other, so the order you take them in changes which one waits.</p>
+      </div>
+      <div class="st-panel__section">
+        <dl class="st-kv">
+          <dt>Counterparty</dt><dd>Brightwater Energy</dd>
+          <dt>Account</dt><dd class="st-num">EUR · 4471-08</dd>
+          <dt>Amount</dt><dd class="st-num">2,480,000.00 EUR</dd>
+          <dt>Value date</dt><dd>23 Aug, same day</dd>
+          <dt>Raised by</dt><dd>a.okafor · 08:51</dd>
+          <dt>Daily limit</dt><dd class="st-num">2,420,000.00 EUR</dd>
+        </dl>
+      </div>
+      <div class="st-panel__section">
+        <p class="st-body-sm st-text-secondary" style="margin: 0">Returning this sends it back to
+          the preparer with your reason attached. It does not cancel the payment, and the value
+          date does not move on its own.</p>
+      </div>
+    </div>
+    <div class="st-panel__foot">
+      <div class="st-btn-group">
+        <button class="st-btn st-btn--primary st-btn--sm">Approve</button>
+        <button class="st-btn st-btn--tertiary st-btn--sm">Return with a question</button>
+      </div>
+    </div>
+  </aside>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference page — Strata (deloitte)</title>
+<link rel="stylesheet" href="strata-deloitte.css">
+<style>
+  /* The ONLY page-specific CSS on this file, and it is three declarations.
+     That is the point of the page: if a reference page needs bespoke layout CSS,
+     the layout layer it is meant to demonstrate does not work. */
+  body { margin: 0; font-family: var(--st-font-sans); color: var(--st-text-primary); }
+  .ref-note { background: var(--st-layer-accent-01); border-bottom: 1px solid var(--st-border-subtle-01);
+               padding: var(--st-space-04) var(--st-space-05); font-size: var(--st-type-body-sm-size); }
+</style>
+</head>
+<body>
+<a class="st-skip" href="#main">Skip to main content</a>
+
+<p class="ref-note" data-review><strong>Strata reference page — deloitte build.</strong>
+One assembled screen, laid out entirely with system classes. Read it before writing layout CSS,
+then re-lay one of your own screens against its rhythm and diff before propagating. Nothing on
+this page is bespoke except three declarations in the head.</p>
+
+<div class="st-shell st-shell--explorer" data-density="comfortable">
+
+  <header class="st-shell__header" data-region="app.identity">
+    <a class="st-shell__brand" href="#">Meridian <small>model governance</small></a>
+    <nav class="st-shell__nav" data-region="app.primary-nav" aria-label="Primary">
+      <a class="st-shell__navlink" href="#">Overview</a>
+      <a class="st-shell__navlink" href="#" aria-current="page">Changes</a>
+      <a class="st-shell__navlink" href="#">Registry</a>
+      <a class="st-shell__navlink" href="#">Audit</a>
+    </nav>
+    <span class="st-shell__spacer"></span>
+    <a class="st-waiting st-waiting--due" href="#" data-region="app.work-waiting">
+      <span class="st-waiting__count">7</span>
+      <span class="st-waiting__label">waiting on you</span>
+    </a>
+    <div class="st-shell__util" data-region="app.utility">
+      <button class="st-shell__utilbtn" aria-label="Help">?</button>
+      <button class="st-shell__utilbtn" aria-label="Settings">&#9881;</button>
+    </div>
+    <span class="st-shell__account" data-region="app.account">
+      <span class="st-shell__avatar" aria-hidden="true">DX</span>
+      <span>D. Xing</span>
+    </span>
+  </header>
+
+  <div class="st-statusband" data-region="app.subject-state" role="status">
+    <span class="st-statusband__item st-statusband__item--stale">
+      <span class="st-statusband__dot" aria-hidden="true"></span>
+      Extract is 41 minutes old</span>
+    <span class="st-statusband__item st-statusband__item--blocked">
+      <span class="st-statusband__dot" aria-hidden="true"></span>
+      Writing blocked — <a href="#">see why</a></span>
+    <span class="st-statusband__item">
+      <span class="st-statusband__dot" aria-hidden="true"></span>
+      Last write verified 09:38</span>
+  </div>
+
+  <nav class="st-shell__rail" data-region="app.secondary-nav" aria-label="Sections">
+    <div class="st-rail__group">
+      <div class="st-rail__label">This cycle</div>
+      <a class="st-rail__link" href="#" aria-current="page">All changes <span class="st-rail__meta">22</span></a>
+      <a class="st-rail__link" href="#">Needs you <span class="st-rail__meta st-rail__meta--due">8</span></a>
+      <a class="st-rail__link" href="#">Blocked <span class="st-rail__meta">2</span></a>
+      <a class="st-rail__link" href="#">Reviewed <span class="st-rail__meta">12</span></a>
+    </div>
+    <div class="st-rail__group" data-open="true">
+      <button class="st-rail__label" aria-expanded="true" aria-controls="rail-areas">
+        <svg class="st-rail__chev" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M6 3l5 5-5 5z"/></svg>Business areas <span class="st-rail__count">14</span></button>
+      <div class="st-rail__items" id="rail-areas">
+        <a class="st-rail__link st-rail__link--sub" href="#">Salary and cost <span class="st-rail__meta">34</span></a>
+        <a class="st-rail__link st-rail__link--sub" href="#">Employee data <span class="st-rail__meta">18</span></a>
+        <a class="st-rail__link st-rail__link--sub" href="#">FX and rates <span class="st-rail__meta">8</span></a>
+        <button class="st-rail__more">11 more</button>
+      </div>
+    </div>
+    <div class="st-rail__group" data-open="false">
+      <button class="st-rail__label" aria-expanded="false" aria-controls="rail-ref">
+        <svg class="st-rail__chev" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M6 3l5 5-5 5z"/></svg>Reference <span class="st-rail__count">3</span></button>
+      <div class="st-rail__items" id="rail-ref">
+        <a class="st-rail__link st-rail__link--sub" href="#">Definitions</a>
+        <a class="st-rail__link st-rail__link--sub" href="#">Tolerances</a>
+        <a class="st-rail__link st-rail__link--sub" href="#">Sign-off history</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="st-shell__main" id="main" tabindex="-1">
+    <div class="st-container">
+
+      <nav aria-label="Breadcrumb">
+        <ol class="st-crumb" data-region="app.locator">
+          <li><a href="#">Meridian</a></li>
+          <li><a href="#">Q3 close</a></li>
+          <li aria-current="page">Changes</li>
+        </ol>
+      </nav>
+
+      <div class="st-page">
+
+        <div class="st-page__head">
+          <div>
+            <h1 class="st-heading-md st-page__title">Changes awaiting review</h1>
+            <p class="st-body-md st-page__sub">Every value that moved between the last published
+              version and the current draft. Anything above its tolerance is flagged for you;
+              everything else is shown so that "no change" and "not included" cannot be mistaken
+              for each other.</p>
+          </div>
+          <div class="st-row" style="--gap: var(--st-space-03)">
+            <button class="st-btn st-btn--tertiary st-btn--md">Export</button>
+            <button class="st-btn st-btn--primary st-btn--md">Publish 12 reviewed</button>
+          </div>
+        </div>
+
+        <div class="st-steps" data-region="review.progress">
+          <div class="st-step st-step--done"><span class="st-step__num">&#10003;</span>
+            <span class="st-step__text">Extract<span class="st-step__pos">step 1 of 4</span></span></div>
+          <div class="st-step st-step--done"><span class="st-step__num">&#10003;</span>
+            <span class="st-step__text">Reconcile<span class="st-step__pos">step 2 of 4</span></span></div>
+          <div class="st-step st-step--current"><span class="st-step__num">3</span>
+            <span class="st-step__text">Review<span class="st-step__pos">step 3 of 4</span></span></div>
+          <div class="st-step st-step--todo"><span class="st-step__num">4</span>
+            <span class="st-step__text">Publish<span class="st-step__pos">step 4 of 4</span></span></div>
+        </div>
+
+        <section class="st-section">
+          <div class="st-grid">
+            <div class="st-col" style="--span:16; --span-md:8; --span-lg:4">
+              <div class="st-stat st-stat--lead" data-region="review.needs-me">
+                <div class="st-stat__figure">8
+                  <span class="st-stat__delta st-stat__delta--down">2</span></div>
+                <div class="st-stat__label">need your judgement</div>
+                <div class="st-stat__meter st-stat__meter--warn"><i style="width:32%"></i></div>
+              </div>
+            </div>
+            <div class="st-col" style="--span:16; --span-md:8; --span-lg:4">
+              <div class="st-stat">
+                <div class="st-stat__figure">12</div>
+                <div class="st-stat__label">reviewed and ready</div>
+                <div class="st-stat__meter"><i style="width:50%"></i></div>
+              </div>
+            </div>
+            <div class="st-col" style="--span:16; --span-md:8; --span-lg:4">
+              <div class="st-stat">
+                <div class="st-stat__figure">2</div>
+                <div class="st-stat__label">blocked upstream</div>
+              </div>
+            </div>
+            <div class="st-col" style="--span:16; --span-md:8; --span-lg:4">
+              <div class="st-stat st-stat--unavailable">
+                <div class="st-stat__figure">not yet run</div>
+                <div class="st-stat__label">tolerance breach count</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="st-note st-note--warning" role="status" data-region="review.upstream-notice">
+          <div>
+            <strong>Two values could not be read from the source model.</strong>
+            They are shown as unread rather than zero, and they cannot be reviewed until the
+            upstream extract completes. The owning team has been notified automatically.
+          </div>
+        </div>
+
+        <section class="st-section">
+          <div class="st-section__head">
+            <h2 class="st-heading-sm">All changes</h2>
+            <span class="st-helper">Sorted by area, then code</span>
+          </div>
+
+          <div class="st-search" data-region="review.search">
+            <label class="st-search__field">
+              <span class="st-search__icon" aria-hidden="true">&#9906;</span>
+              <span class="st-lbl">Find a value</span>
+              <input class="st-field" type="search" placeholder="Search 22 changed values"
+                     aria-describedby="ref-count">
+            </label>
+            <div class="st-search__count" id="ref-count" aria-live="polite">
+              <b>22</b> in scope
+            </div>
+          </div>
+
+          <div class="st-table-wrap" style="margin-top: var(--st-space-05)">
+          <table class="st-table st-table--zebra" data-region="review.change-table">
+            <caption class="st-helper" style="text-align:left; padding: var(--st-space-04)">
+              Before and after on a shared key. Unchanged rows are shown, not hidden.
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col" aria-sort="ascending">
+                  <button class="st-table__sort" type="button">Code
+                    <svg class="st-table__sortarrow" viewBox="0 0 12 12" aria-hidden="true">
+                      <path fill="currentColor" d="M6 2l4 6H2z"/></svg></button></th>
+                <th scope="col"><button class="st-table__sort" type="button">Area
+                    <svg class="st-table__sortarrow" viewBox="0 0 12 12" aria-hidden="true">
+                      <path fill="currentColor" d="M6 2l4 6H2z"/></svg></button></th>
+                <th scope="col">Value</th>
+                <th scope="col">Published</th><th scope="col">Draft</th><th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">SAL03.uplift_pct</a></td>
+      <td>Sales</td>
+      <td class="st-truncate">Uplift %</td>
+      <td class="st-cmp-before st-num">2.5%</td>
+      <td class="st-cmp-after st-num">3.1%<span class="st-stat__delta st-stat__delta--up">0.6pp</span></td>
+      <td><span class="st-tag st-tag--green">Reviewed</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">SAL03.base_volume</a></td>
+      <td>Sales</td>
+      <td class="st-truncate">Base volume</td>
+      <td class="st-cmp-before st-num">1,204</td>
+      <td class="st-cmp-same">unchanged</td>
+      <td><span class="st-tag st-tag--green">Reviewed</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">SAL07.channel_mix</a></td>
+      <td>Sales</td>
+      <td class="st-truncate">Channel mix</td>
+      <td class="st-cmp-before st-num">44.0%</td>
+      <td class="st-cmp-after st-num">51.2%<span class="st-stat__delta st-stat__delta--up">7.2pp</span></td>
+      <td><span class="st-tag st-tag--amber">Needs you</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">OPX11.headcount</a></td>
+      <td>Operations</td>
+      <td class="st-truncate">Headcount</td>
+      <td class="st-cmp-before st-num">318</td>
+      <td class="st-cmp-after st-num">302<span class="st-stat__delta st-stat__delta--down">16</span></td>
+      <td><span class="st-tag st-tag--amber">Needs you</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">OPX11.overtime_rate</a></td>
+      <td>Operations</td>
+      <td class="st-truncate">Overtime rate</td>
+      <td class="st-cmp-before st-num">6.4%</td>
+      <td class="st-cmp-after st-num">9.8%<span class="st-stat__delta st-stat__delta--up">3.4pp</span></td>
+      <td><span class="st-tag st-tag--amber">Needs you</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">OPX14.site_capacity</a></td>
+      <td>Operations</td>
+      <td class="st-truncate">Site capacity</td>
+      <td class="st-cmp-unread"></td>
+      <td class="st-cmp-after">88.0%</td>
+      <td><span class="st-tag st-tag--red">Blocked</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">FIN02.fx_eur</a></td>
+      <td>Finance</td>
+      <td class="st-truncate">FX rate EUR</td>
+      <td class="st-cmp-before st-num">1.084</td>
+      <td class="st-cmp-same">unchanged</td>
+      <td><span class="st-tag st-tag--green">Reviewed</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">FIN02.fx_gbp</a></td>
+      <td>Finance</td>
+      <td class="st-truncate">FX rate GBP</td>
+      <td class="st-cmp-before st-num">0.842</td>
+      <td class="st-cmp-after st-num">0.851<span class="st-stat__delta st-stat__delta--up">0.9%</span></td>
+      <td><span class="st-tag st-tag--green">Reviewed</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">FIN09.accrual_basis</a></td>
+      <td>Finance</td>
+      <td class="st-truncate">Accrual basis</td>
+      <td class="st-cmp-before st-num">Q-end</td>
+      <td class="st-cmp-after">M-end</td>
+      <td><span class="st-tag st-tag--amber">Needs you</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">FIN09.tax_rate</a></td>
+      <td>Finance</td>
+      <td class="st-truncate">Effective tax rate</td>
+      <td class="st-cmp-before st-num">24.0%</td>
+      <td class="st-cmp-same">unchanged</td>
+      <td><span class="st-tag st-tag--green">Reviewed</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">MKT04.spend_ceiling</a></td>
+      <td>Marketing</td>
+      <td class="st-truncate">Spend ceiling</td>
+      <td class="st-cmp-before st-num">4.2m</td>
+      <td class="st-cmp-after st-num">3.8m<span class="st-stat__delta st-stat__delta--down">9.5%</span></td>
+      <td><span class="st-tag st-tag--green">Reviewed</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">MKT04.attribution</a></td>
+      <td>Marketing</td>
+      <td class="st-truncate">Attribution window</td>
+      <td class="st-cmp-before st-num">28d</td>
+      <td class="st-cmp-after st-num">14d<span class="st-stat__delta st-stat__delta--down">14d</span></td>
+      <td><span class="st-tag st-tag--amber">Needs you</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">MKT08.cpa_target</a></td>
+      <td>Marketing</td>
+      <td class="st-truncate">CPA target</td>
+      <td class="st-cmp-before st-num">£31.40</td>
+      <td class="st-cmp-after st-num">£29.10<span class="st-stat__delta st-stat__delta--down">7.3%</span></td>
+      <td><span class="st-tag st-tag--green">Reviewed</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">SUP01.lead_time</a></td>
+      <td>Supply</td>
+      <td class="st-truncate">Lead time</td>
+      <td class="st-cmp-before st-num">21d</td>
+      <td class="st-cmp-after st-num">26d<span class="st-stat__delta st-stat__delta--up">5d</span></td>
+      <td><span class="st-tag st-tag--amber">Needs you</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">SUP01.safety_stock</a></td>
+      <td>Supply</td>
+      <td class="st-truncate">Safety stock</td>
+      <td class="st-cmp-before st-num">12.0%</td>
+      <td class="st-cmp-same">unchanged</td>
+      <td><span class="st-tag st-tag--green">Reviewed</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">SUP06.supplier_split</a></td>
+      <td>Supply</td>
+      <td class="st-truncate">Supplier split</td>
+      <td class="st-cmp-unread"></td>
+      <td class="st-cmp-after">60/40</td>
+      <td><span class="st-tag st-tag--red">Blocked</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">HRP02.attrition</a></td>
+      <td>People</td>
+      <td class="st-truncate">Attrition</td>
+      <td class="st-cmp-before st-num">11.2%</td>
+      <td class="st-cmp-after st-num">13.9%<span class="st-stat__delta st-stat__delta--up">2.7pp</span></td>
+      <td><span class="st-tag st-tag--amber">Needs you</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">HRP02.backfill_lag</a></td>
+      <td>People</td>
+      <td class="st-truncate">Backfill lag</td>
+      <td class="st-cmp-before st-num">34d</td>
+      <td class="st-cmp-same">unchanged</td>
+      <td><span class="st-tag st-tag--green">Reviewed</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">HRP05.grade_bands</a></td>
+      <td>People</td>
+      <td class="st-truncate">Grade bands</td>
+      <td class="st-cmp-before st-num">7</td>
+      <td class="st-cmp-after st-num">9<span class="st-stat__delta st-stat__delta--up">2</span></td>
+      <td><span class="st-tag st-tag--green">Reviewed</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">TRE01.hedge_ratio</a></td>
+      <td>Treasury</td>
+      <td class="st-truncate">Hedge ratio</td>
+      <td class="st-cmp-before st-num">75.0%</td>
+      <td class="st-cmp-after st-num">80.0%<span class="st-stat__delta st-stat__delta--up">5.0pp</span></td>
+      <td><span class="st-tag st-tag--amber">Needs you</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">TRE01.liquidity_floor</a></td>
+      <td>Treasury</td>
+      <td class="st-truncate">Liquidity floor</td>
+      <td class="st-cmp-before st-num">18.0m</td>
+      <td class="st-cmp-same">unchanged</td>
+      <td><span class="st-tag st-tag--green">Reviewed</span></td>
+    </tr>
+    <tr class="st-table__rowlink">
+      <td><a href="#" class="st-code">TRE04.counterparty</a></td>
+      <td>Treasury</td>
+      <td class="st-truncate">Counterparty limit</td>
+      <td class="st-cmp-before st-num">9.0m</td>
+      <td class="st-cmp-after st-num">7.5m<span class="st-stat__delta st-stat__delta--down">16.7%</span></td>
+      <td><span class="st-tag st-tag--green">Reviewed</span></td>
+    </tr>
+            </tbody>
+          </table>
+          </div>
+        </section>
+
+        <section class="st-section">
+          <div class="st-section__head"><h2 class="st-heading-sm">Two versions of the definition</h2></div>
+          <div class="st-compare" data-region="review.definition-conflict">
+            <div class="st-compare__panel">
+              <div class="st-compare__label">Yours
+                <span class="st-tag st-tag--outline st-tag--sm">unsaved</span></div>
+              <p class="st-compare__body st-body-sm">Uplift is applied to the base volume after
+                seasonality but before channel mix, so a change to the mix does not compound into
+                the uplift. This matches how the planning team has always described it in
+                workshops, and it is the reading the current spreadsheet implements.</p>
+              <p class="st-compare__attrib">d.xing · edited 09:41 · against version 7</p>
+            </div>
+            <div class="st-compare__panel st-compare__panel--winning">
+              <div class="st-compare__label">Published
+                <span class="st-tag st-tag--green st-tag--sm">in force</span></div>
+              <p class="st-compare__body st-body-sm">Uplift is applied after channel mix, so the
+                two interact. This is what the model actually computes today, and it is why the
+                Q2 reforecast moved when the mix was corrected. If the definition above is the
+                intended behaviour, the model is wrong rather than the definition.</p>
+              <p class="st-compare__attrib">a.okafor · published 12 Jun · version 7</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="st-section">
+          <div class="st-section__head"><h2 class="st-heading-sm">Detail on demand</h2></div>
+          <p class="st-body-sm st-text-secondary" style="margin:0 0 var(--st-space-04)">The walk
+            answers how far a consequence reaches; the disclosures below it answer what is inside
+            something. Distance is the reason they are different components.</p>
+          <div class="st-lineage st-lineage--upstream" data-region="review.lineage">
+            <div class="st-lineage__origin">
+              <span class="st-code">CST02</span>
+              <span>Salary Cost GBP</span>
+              <span class="st-lineage__desc">What feeds this value, three hops upstream</span>
+            </div>
+            <section class="st-lineage__hop" aria-labelledby="ref-hop-1">
+              <h3 class="st-lineage__hoplabel" id="ref-hop-1">Hop 1
+                <span class="st-lineage__hopcount">2 items</span></h3>
+              <ul class="st-lineage__nodes">
+                <li class="st-lineage__node">
+                  <a class="st-code" href="#ref-hop-1">FIN02</a>
+                  <span class="st-lineage__desc">Exchange rates, published monthly by Finance</span>
+                </li>
+                <li class="st-lineage__node st-lineage__node--open">
+                  <button class="st-lineage__node-toggle" aria-expanded="true" aria-controls="ref-nest-sup06">
+                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M6 3l5 5-5 5z"/></svg><span class="st-visually-hidden">Hide what feeds SUP06</span>
+                  </button>
+                  <a class="st-code" href="#ref-hop-1">SUP06</a>
+                  <span class="st-tag st-tag--amber st-tag--sm">last run Tuesday</span>
+                  <span class="st-lineage__desc">Supplier split, which is why the published value
+                    reads as unread rather than zero</span>
+                  <div class="st-lineage__nest" id="ref-nest-sup06">
+                    <h4 class="st-lineage__hoplabel">Feeding SUP06
+                      <span class="st-lineage__hopcount">2 items</span></h4>
+                    <ul class="st-lineage__nodes">
+                      <li class="st-lineage__node">
+                        <a class="st-code" href="#ref-hop-1">SUP01</a>
+                        <span class="st-lineage__desc">Supplier master, refreshed nightly</span>
+                      </li>
+                      <li class="st-lineage__node st-lineage__node--restricted">
+                        <span class="st-code">PAY09</span>
+                        <span class="st-lineage__desc">Restricted — the reference is visible and the
+                          content is withheld. This is a declared hole, not a missing record.</span>
+                      </li>
+                    </ul>
+                  </div>
+                </li>
+              </ul>
+            </section>
+            <section class="st-lineage__hop" aria-labelledby="ref-hop-2">
+              <h3 class="st-lineage__hoplabel" id="ref-hop-2">Hop 2
+                <span class="st-lineage__hopcount">7 items</span></h3>
+              <ul class="st-lineage__nodes">
+                <li class="st-lineage__node">
+                  <a class="st-code" href="#ref-hop-2">FIN09</a>
+                  <span class="st-lineage__desc">Accrual basis, published monthly</span>
+                </li>
+                <li class="st-lineage__node">
+                  <a class="st-code" href="#ref-hop-2">OVR04</a>
+                  <span class="st-lineage__desc">Manual override, expires 30 Sep</span>
+                </li>
+              </ul>
+              <button class="st-lineage__more st-btn st-btn--tertiary st-btn--sm">5 more at this hop</button>
+            </section>
+            <div class="st-lineage__horizon">
+              <h3 class="st-lineage__hoplabel">Beyond the horizon
+                <span class="st-lineage__hopcount">41 items</span></h3>
+              <button class="st-btn st-btn--tertiary st-btn--sm">41 more, 4 hops and further</button>
+            </div>
+          </div>
+          <details class="st-disclose" data-region="review.history">
+            <summary>
+              <svg class="st-disclose__chev" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                <path fill="currentColor" d="M6 3l5 5-5 5z"/></svg>
+              <span class="st-disclose__title">Change history</span>
+              <span class="st-disclose__meta">18 entries</span>
+            </summary>
+            <div class="st-disclose__body st-body-sm">Every edit since the last publication, with
+              who made it and what it replaced.</div>
+          </details>
+          <details class="st-disclose st-disclose--empty" data-region="review.attachments">
+            <summary>
+              <svg class="st-disclose__chev" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                <path fill="currentColor" d="M6 3l5 5-5 5z"/></svg>
+              <span class="st-disclose__title">Attachments</span>
+              <span class="st-disclose__meta">none</span>
+            </summary>
+          </details>
+        </section>
+
+        <section class="st-section">
+          <div class="st-section__head"><h2 class="st-heading-sm">Record your decision</h2></div>
+          <div class="st-grid">
+            <div class="st-col" style="--span:16; --span-lg:8">
+              <div class="st-stack">
+                <div class="st-formitem">
+                  <label class="st-lbl" for="ref-reason">Reason for accepting</label>
+                  <input class="st-field" id="ref-reason" aria-describedby="ref-reason-help">
+                  <div class="st-help st-helper" id="ref-reason-help">Visible to whoever reviews this
+                    after you. One sentence is enough.</div>
+                </div>
+                <div class="st-formitem">
+                  <label class="st-lbl" for="ref-tol">Tolerance applied</label>
+                  <input class="st-field" id="ref-tol" value="0" aria-invalid="true"
+                         aria-describedby="ref-tol-err">
+                  <div class="st-msg st-msg--error st-helper" id="ref-tol-err">
+                    A tolerance of zero flags every rounding difference. Enter a value above 0, or
+                    choose "no tolerance" to state that deliberately.</div>
+                </div>
+                <fieldset style="border:0;padding:0;margin:0">
+                  <legend class="st-lbl">Then</legend>
+                  <div class="st-choice">
+                    <label class="st-row" style="--gap: var(--st-space-03)">
+                      <input class="st-radio" type="radio" name="ref-next" checked>
+                      <span class="st-radio__dot" aria-hidden="true"></span>
+                      <span class="st-body-sm">Return to the preparer</span></label>
+                    <label class="st-row" style="--gap: var(--st-space-03)">
+                      <input class="st-radio" type="radio" name="ref-next">
+                      <span class="st-radio__dot" aria-hidden="true"></span>
+                      <span class="st-body-sm">Send straight to publish</span></label>
+                  </div>
+                </fieldset>
+                <div class="st-btn-group">
+                  <button class="st-btn st-btn--primary">Accept change</button>
+                  <button class="st-btn st-btn--secondary">Return with a question</button>
+                </div>
+              </div>
+            </div>
+            <div class="st-col" style="--span:16; --span-lg:8">
+              <div class="st-tile">
+                <div class="st-tile__title">This line</div>
+                <dl class="st-kv">
+                  <dt>Code</dt><dd class="st-num">FIN02.fx_gbp</dd>
+                  <dt>Owner</dt><dd>Finance · a.okafor</dd>
+                  <dt>Tolerance</dt><dd class="st-num">0.5%</dd>
+                  <dt>Last published</dt><dd>12 Jun, version 7</dd>
+                  <dt>Session code</dt><dd><span class="st-keycode st-keycode--sm">KHDR-2F9Q</span></dd>
+                </dl>
+              </div>
+              <div class="st-empty" style="margin-top: var(--st-space-05)">
+                <p class="st-empty__title">No questions raised yet</p>
+                <p class="st-empty__body">When someone returns a line with a question it appears
+                  here, alongside who asked and what they were looking at. Nothing is waiting on
+                  you right now.</p>
+                <button class="st-btn st-btn--tertiary st-btn--sm">Ask about this line</button>
+              </div>
+              <div class="st-tile" style="margin-top: var(--st-space-05)">
+                <div class="st-tile__title">What happens next</div>
+                <div class="st-tile__body">Accepting moves this line to <em>reviewed</em> and adds it
+                  to the publish batch. It does not publish on its own — publishing is a separate,
+                  deliberate act at step 4, and until then the preparer can still withdraw the
+                  change. If you return it instead, the preparer sees your reason and the line goes
+                  back to <em>needs preparer</em>; if nobody acts on it within five working days it
+                  escalates to the area owner.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+
+    <div class="st-toasts" data-region="app.transient">
+      <div class="st-toast st-toast--success" role="status">
+        <div class="st-toast__body">
+          <div class="st-toast__title">Saved</div>
+          Your reason was recorded against FIN02.fx_gbp.
+        </div>
+        <button class="st-toast__close" aria-label="Dismiss">&#10005;</button>
+      </div>
+    </div>
+  </main>
+
+  <aside class="st-shell__panel" data-region="app.detail" data-open="true"
+         aria-label="Salary Cost LC">
+    <div class="st-panel__head">
+      <div style="flex:1;min-width:0">
+        <span class="st-label st-text-secondary">SAL03 &middot; line item</span>
+        <h2 class="st-panel__title">Salary Cost LC</h2>
+      </div>
+      <button class="st-panel__dismiss" aria-label="Close panel">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+          <path fill="currentColor" d="M4 3l9 9-1 1-9-9zM13 4l-9 9-1-1 9-9z"/></svg>
+      </button>
+    </div>
+    <div class="st-tablist" role="tablist" aria-label="Panel sections">
+      <button class="st-tab" role="tab" id="pt-dec" aria-controls="pp-dec"
+              aria-selected="true" data-attention="true">Decision</button>
+      <button class="st-tab" role="tab" id="pt-det" aria-controls="pp-det" aria-selected="false">Detail</button>
+      <button class="st-tab" role="tab" id="pt-mea" aria-controls="pp-mea" aria-selected="false">Meaning</button>
+    </div>
+    <div class="st-panel__body">
+      <div role="tabpanel" id="pp-dec" aria-labelledby="pt-dec">
+        <div class="st-note st-note--warning" style="margin-bottom:var(--st-space-04)">
+          <div class="st-body-sm"><b>Formula changed.</b> Uplift now applies inside the bracket.</div>
+        </div>
+        <div class="st-panel__box">
+          <span class="st-panel__boxlabel">Agreed by james.t, 26 July</span>
+          <span class="st-body-sm">Base salary multiplied by the uplift percentage.</span>
+        </div>
+        <div class="st-panel__box">
+          <span class="st-panel__boxlabel">A starting point &mdash; not yet yours</span>
+          <span class="st-body-sm">Base salary multiplied by one plus the uplift percentage.</span>
+        </div>
+      </div>
+      <div role="tabpanel" id="pp-det" aria-labelledby="pt-det" hidden>
+        <dl class="st-kv">
+          <dt>Grain</dt><dd>Employee &times; Month &times; Legal Entity</dd>
+          <dt>Cells</dt><dd class="st-num">4,118,400</dd>
+          <dt>Owner</dt><dd>james.t</dd>
+        </dl>
+        <div class="st-panel__box" style="margin-top:var(--st-space-04)">
+          <span class="st-panel__boxlabel">Formula</span>
+          <span class="st-code">Base Salary Cost * (1 + Uplift %)</span>
+        </div>
+      </div>
+      <div role="tabpanel" id="pp-mea" aria-labelledby="pt-mea" hidden>
+        <p class="st-body-sm" style="margin:0">Base salary multiplied by the uplift
+          percentage, before on-costs and before any regional adjustment.</p>
+      </div>
+    </div>
+    <div class="st-panel__foot">
+      <div class="st-btn-group">
+        <button class="st-btn st-btn--primary st-btn--sm">Confirm</button>
+        <button class="st-btn st-btn--tertiary st-btn--sm">Rewrite</button>
+      </div>
+    </div>
+  </aside>
+</div>
+</body>
+</html>
