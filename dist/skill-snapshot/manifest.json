@@ -1,0 +1,64 @@
+{
+  "brands": [
+    "deloitte",
+    "scaffold"
+  ],
+  "files": {
+    "LICENCE-AND-ATTRIBUTION.md": {
+      "sha256": "8b7650e62947e5387df301a914ecba4dd3db35177e40bcde679c064b4ded9f25",
+      "source": "LICENCE-AND-ATTRIBUTION.md"
+    },
+    "NOTICE": {
+      "sha256": "9018506390d26aa9a1f8cb0e2c102c4803692f698ffdf2f0330539c8daf3a307",
+      "source": "NOTICE"
+    },
+    "README.md": {
+      "sha256": "6b4f104026b7eaf7d9210de40afba15e43187e7db8ac40f64bff5049e56a1c09",
+      "source": "build/snapshot/README.md (authored, state block generated)"
+    },
+    "composition.md": {
+      "sha256": "0961441dcb17e6b139f80b5db1e3cdf809b19569b6b32b3fa83cf0039556567c",
+      "source": "COMPOSITION.md"
+    },
+    "patterns.md": {
+      "sha256": "331b182df74bb7bb2fc0fc771632d64aa68613de92acf35470f6a6435b2ff7e1",
+      "source": "PATTERNS.md"
+    },
+    "production-check.py": {
+      "sha256": "e7cfe9fae3d2034345a333f3962c8a122ccdd909328b71be2d5b00b2f3886941",
+      "source": "build/production_check.py"
+    },
+    "reference-deloitte.html": {
+      "sha256": "573e2de1830def45a040f94339ac6a17726387757d52af31fc6689ec667e4f16",
+      "source": "dist/deloitte/reference-deloitte.html"
+    },
+    "reference-scaffold.html": {
+      "sha256": "d4a02e5758d31865e095b49c4c67fd4052b498befe7e3bf3a69dde11295da702",
+      "source": "dist/scaffold/reference-scaffold.html"
+    },
+    "resolution-map.md": {
+      "sha256": "ff451530882892fc3d0ee2ae913ff04139837e446af50aba2fffc8aec1db29f3",
+      "source": "RESOLUTION-MAP.md"
+    },
+    "shell-spec.md": {
+      "sha256": "73376bb800c710431569ac25caa395404de0cb202792305dc84f763040cf5baa",
+      "source": "SHELL-SPEC.md"
+    },
+    "strata-deloitte.css": {
+      "sha256": "3c6321a7a0260c96659b22b3a783b54e12c4220137c13fcbfc104868df6ccaa5",
+      "source": "dist/deloitte/strata.css"
+    },
+    "strata-icons.svg": {
+      "sha256": "35d4955d56deebd7882f185e1f137434f57738fedeb306d9332d049c3b730c58",
+      "source": "dist/deloitte/strata-icons.svg"
+    },
+    "strata-scaffold.css": {
+      "sha256": "e6658c1cafc18c8ffcc7ec56b08999776aa8bf9c2322679bf25afdf5e742cecf",
+      "source": "dist/scaffold/strata.css"
+    },
+    "usage.md": {
+      "sha256": "386a55da81b4debbedbad90f196df271493f0c1e708c28d0c2c8a01b04aba061",
+      "source": "USAGE.md"
+    }
+  }
+}

@@ -1,0 +1,93 @@
+<title>Strata Release Queue</title>
+
+<!-- The scaffold build ships inline so the page is styled from first paint; the
+     deloitte build sits inert beside it and the toggle swaps one for the other.
+     Identical markup, a different stylesheet — that is the claim this page exists
+     to let you check by looking. -->
+<style id="st-brand">__CSS_SCAFFOLD__</style>
+<script type="text/plain" id="css-deloitte">__CSS_DELOITTE__</script>
+
+<script>
+// Runs during parse, before the shell paints, so the page never flashes the wrong
+// theme. Strata keys dark off [data-theme="dark"] on the root and publishes no
+// prefers-color-scheme block; the host stamps data-theme only when the viewer has
+// chosen explicitly, so on "system" we mirror the media query here — and stand down
+// the moment the host writes a value of its own.
+(function () {
+  var root = document.documentElement;
+  var mq = window.matchMedia('(prefers-color-scheme: dark)');
+  var mine = null;
+  function apply() {
+    var now = root.getAttribute('data-theme');
+    if (now && now !== mine) return;
+    mine = mq.matches ? 'dark' : 'light';
+    root.setAttribute('data-theme', mine);
+  }
+  apply();
+  if (mq.addEventListener) mq.addEventListener('change', apply);
+})();
+</script>
+
+<style>
+  /* Review chrome only — the strip along the top. The screen below it carries no
+     page-specific CSS of any kind, which is the point of it. Even these rules take
+     their colours from Strata's tokens, so the strip follows the brand and theme
+     rather than sitting outside them. */
+  body { margin: 0; background: var(--st-background); color: var(--st-text-primary);
+         font-family: var(--st-font-sans); }
+  .demo-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center;
+              gap: var(--st-space-05); height: 48px; padding-inline: var(--st-space-05);
+              background: var(--st-layer-accent-01);
+              border-bottom: 1px solid var(--st-border-subtle-01);
+              font: 400 var(--st-type-body-sm-size)/1 var(--st-font-sans);
+              color: var(--st-text-secondary); }
+  .demo-bar b { color: var(--st-text-primary); }
+  .demo-bar__note { flex: 1 1 auto; min-width: 0; overflow: hidden;
+                    text-overflow: ellipsis; white-space: nowrap; }
+  .demo-bar__set { display: flex; gap: var(--st-space-02); flex: none; }
+  .demo-bar__btn { height: 28px; padding-inline: var(--st-space-04); cursor: pointer;
+                   border: 1px solid var(--st-border-subtle-01);
+                   border-radius: var(--st-radius-full);
+                   background: var(--st-layer-02); color: var(--st-text-secondary);
+                   font: 500 var(--st-type-body-sm-size)/1 var(--st-font-sans); }
+  .demo-bar__btn:focus-visible { outline: 2px solid var(--st-focus); outline-offset: 1px; }
+  .demo-bar__btn[aria-pressed="true"] { background: var(--st-background-brand);
+                                        border-color: var(--st-background-brand);
+                                        color: var(--st-text-on-color); }
+</style>
+
+<div class="demo-bar" data-review>
+  <b>Strata demo</b>
+  <span class="demo-bar__note">payment release queue &middot; shell <b>--task --norail</b>
+    &middot; density comfortable &middot; appearance default &middot; theme follows yours</span>
+  <span class="demo-bar__set">
+    <button class="demo-bar__btn" type="button" data-brand="scaffold" aria-pressed="true">scaffold</button>
+    <button class="demo-bar__btn" type="button" data-brand="deloitte" aria-pressed="false">deloitte</button>
+  </span>
+</div>
+
+__SPRITE__
+__BODY__
+
+<script>
+(function () {
+  var slot = document.getElementById('st-brand');
+  var css = { scaffold: slot.textContent,
+              deloitte: document.getElementById('css-deloitte').textContent };
+  var btns = [].slice.call(document.querySelectorAll('.demo-bar__btn'));
+  function setBrand(name) {
+    if (!css[name]) return;
+    slot.textContent = css[name];
+    btns.forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.brand === name));
+    });
+    try { localStorage.setItem('strata-demo-brand', name); } catch (e) {}
+  }
+  btns.forEach(function (b) {
+    b.addEventListener('click', function () { setBrand(b.dataset.brand); });
+  });
+  var saved = null;
+  try { saved = localStorage.getItem('strata-demo-brand'); } catch (e) {}
+  if (saved === 'deloitte') setBrand('deloitte');
+})();
+</script>
